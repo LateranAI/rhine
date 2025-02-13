@@ -1,0 +1,36 @@
+[package]
+name = "rhine"
+version = "0.1.0"
+edition = "2021"
+description = "code core of Rhine Lab"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# 基础工具库
+once_cell = { version = "1.19.0" }
+futures = { version = "0.3.31" }
+thiserror = { version = "2.0.11" }
+tracing = { version = "0.1" }
+clia-tracing-config = { version = "0.2.7" }
+#tklog = { version = "0.2.9" }  # 预留作为tracing的转发后端提升日志输出性能
+
+# 网络和 HTTP 相关
+tokio = { version = "1", features = ["full"] }
+ureq = { version = "3.0.4" , features = ["json"]}
+
+# 数据库相关
+sea-orm = { version = "1.1.4", features = ["runtime-tokio-native-tls", "sqlx-mysql", "macros"] }
+chrono = { version = "0.4.39" }
+
+# 序列化和数据格式
+serde = { version = "1.0.196" }
+serde_json = { version = "1.0.137" }
+
+# 实用工具库
+spider = "2.27.50"
+
+schema_derive = { path = "./schema_derive"}
+indoc = "2.0.5"
+regex = "1.11.1"
+dashmap = "6.1.0"
+error-stack = { version = "0.5.0"}
