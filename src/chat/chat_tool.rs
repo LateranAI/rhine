@@ -1,7 +1,7 @@
+use crate::CFG;
 use error_stack::{Result, ResultExt, Report};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use tracing::debug;
 use tracing::log::info;
 use crate::chat::chat_base::{BaseChat, Role};
 use crate::schema::json_schema::JsonSchema;

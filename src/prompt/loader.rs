@@ -1,3 +1,4 @@
+use crate::load_toml;
 use std::collections::HashMap;
 use crate::prompt::model::{Config, Content, Info, Template};
 

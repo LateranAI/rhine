@@ -2487,6 +2487,7 @@ dependencies = [
  "spider",
  "thiserror 2.0.11",
  "tokio",
+ "toml",
  "tracing",
  "ureq 3.0.5",
 ]
@@ -3036,9 +3037,9 @@ dependencies = [
 
 [[package]]
 name = "spider"
-version = "2.27.54"
+version = "2.27.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2badb67082420afcc5b88174ff74664964cccb2f7bbd218d5161aced456daff2"
+checksum = "a89064a268c22a86833ce57105b03e0771447fb29870f5e6311fb198cb8c7f82"
 dependencies = [
  "ahash 0.8.11",
  "aho-corasick",
