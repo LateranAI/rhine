@@ -6,6 +6,7 @@ use thiserror::Error;
 use tracing::log::{debug, info};
 use crate::chat::chat_base::{BaseChat, Role};
 use crate::chat::chat_tool::ChatTool;
+use crate::config::ModelCapability;
 use crate::prompt::assembler::{assemble_output_description, assemble_tools_prompt};
 use crate::schema::json_schema::JsonSchema;
 use crate::schema::tool_schema::extract_tool_uses;
@@ -49,14 +50,26 @@ pub struct SingleChat {
 }
 
 impl SingleChat {
-    pub fn new(
-        model: &str,
-        base_url: &str,
-        api_key: &str,
+    pub fn new_with_api_name(
+        api_name: &str,
         character_prompt: &str,
         need_stream: bool,
     ) -> Self {
-        let base = BaseChat::new(model, base_url, api_key, character_prompt, need_stream);
+        let base = BaseChat::new_with_api_name(
+            api_name, character_prompt, need_stream);
+        Self {
+            base,
+            tools_schema: Vec::new(),
+        }
+    }
+
+    pub fn new_with_model_capability(
+        model_capability: &ModelCapability,
+        character_prompt: &str,
+        need_stream: bool,
+    ) -> Self {
+        let base = BaseChat::new_with_model_capability(
+            model_capability, character_prompt, need_stream);
         Self {
             base,
             tools_schema: Vec::new(),

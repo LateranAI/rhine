@@ -1,9 +1,10 @@
-use crate::CFG;
 use error_stack::{Result, ResultExt, Report};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tracing::log::info;
 use crate::chat::chat_base::{BaseChat, Role};
+use crate::config::{ModelCapability, CFG};
+use crate::config::ModelCapability::ToolUse;
 use crate::schema::json_schema::JsonSchema;
 
 #[derive(Error, Debug)]
@@ -21,10 +22,9 @@ impl ChatTool {
         text_answer: &str,
         json_schema: serde_json::Value,
     ) -> Result<T, ChatToolError> {
-        let mut base = BaseChat::new(
-            &CFG.chat.openai.tool_model,
-            &CFG.chat.openai.base_url,
-            &CFG.chat.openai.api_key,
+        let cfg = CFG.lock().unwrap().clone().unwrap();
+        let mut base = BaseChat::new_with_model_capability(
+            &ToolUse,
             "将输入内容整理为指定的json形式输出",
             false,
         );
@@ -58,10 +58,8 @@ impl ChatTool {
         text_answer: &str,
         tools_schema: serde_json::Value,
     ) -> Result<serde_json::Value, ChatToolError> {
-        let mut base = BaseChat::new(
-            &CFG.chat.openai.tool_model,
-            &CFG.chat.openai.base_url,
-            &CFG.chat.openai.api_key,
+        let mut base = BaseChat::new_with_model_capability(
+            &ToolUse,
             "根据输入的内容调用指定的函数",
             false,
         );

@@ -17,11 +17,11 @@ pub enum MultiChatError {
     UndefinedCharacter(String),
     #[error("No character selected")]
     NoCharacterSelected,
-    #[error("Failed to assemble output description")] // 新增的错误类型
+    #[error("Failed to assemble output description")]
     AssembleOutputDescription,
-    #[error("API request failed")] // 新增
+    #[error("API request failed")]
     ApiRequestFailed,
-    #[error("Failed to parse response")] //新增
+    #[error("Failed to parse response")]
     ParseResponseFailed,
 }
 
@@ -34,9 +34,7 @@ pub struct MultiChat {
 
 impl MultiChat {
     pub fn new(
-        model: &str,
-        base_url: &str,
-        api_key: &str,
+        api_name: &str,
         character_prompts: HashMap<String, String>,
         need_stream: bool,
     ) -> Result<Self, MultiChatError> {
@@ -45,7 +43,7 @@ impl MultiChat {
         }
 
         Ok(Self {
-            base: BaseChat::new(model, base_url, api_key, "", need_stream),
+            base: BaseChat::new_with_api_name(api_name, "", need_stream),
             character_prompts,
             current_character: String::new(),
         })
