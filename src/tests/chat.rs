@@ -17,8 +17,8 @@ pub async fn test_chat() {
         "sk-cPdegaWl8YFcKZYs8a108b5f741844D9A1E0B90e724bBe23",
     );
 
-    test_single_chat().await;
-    // test_single_chat_get_json().await;
+    // test_single_chat().await;
+    test_single_chat_get_json().await;
     // test_single_chat_get_tool().await;
 }
 

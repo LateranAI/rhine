@@ -1,7 +1,9 @@
 use tracing::log::info;
 use crate::tests::chat::test_chat;
+use crate::tests::prompt::test_prompt;
 
 mod chat;
+mod prompt;
 
 #[tokio::test]
 pub async fn test() {
@@ -14,7 +16,7 @@ pub async fn test() {
         .file_name("test.log")
         .init();
     println!("log level: {}", "info");
-
+    test_prompt().await;
     test_chat().await;
 }
 
