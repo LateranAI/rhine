@@ -163,8 +163,8 @@ pub fn function_tool_attr_impl(attr: TokenStream, item: TokenStream) -> TokenStr
                 extern "C" fn initialize() {
                     use std::sync::Arc;
                     use error_stack::{Result, ResultExt, Report};
-                    use crate::utils::chat::function_calling::get_tool_registry;
-                    use crate::utils::chat::function_calling::FunctionCallingError;
+                    use crate::schema::tool_schema::get_tool_registry;
+                    use crate::schema::tool_schema::ChatToolSchemaError;
 
                     let tool_name = #tool_name_lit.to_string();
                     let tool_name_clone = tool_name.clone();
@@ -173,7 +173,7 @@ pub fn function_tool_attr_impl(attr: TokenStream, item: TokenStream) -> TokenStr
                             params.clone()
                         ).map_err(|e| {
                             Report::new(
-                                FunctionCallingError::ParamsParseError(
+                                ChatToolSchemaError::ParamsParseError(
                                     tool_name.clone(),
                                     params.to_string()
                                 )
@@ -182,7 +182,7 @@ pub fn function_tool_attr_impl(attr: TokenStream, item: TokenStream) -> TokenStr
                         let result = #module_path::#fn_name(parsed_params);
                         serde_json::to_value(result).map_err(|e| {
                             Report::new(
-                                FunctionCallingError::ResultParseError(
+                                ChatToolSchemaError::ResultParseError(
                                     tool_name.clone(),
                                 )
                             )

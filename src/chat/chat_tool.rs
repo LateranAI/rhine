@@ -22,7 +22,6 @@ impl ChatTool {
         text_answer: &str,
         json_schema: serde_json::Value,
     ) -> Result<T, ChatToolError> {
-        let cfg = CFG.lock().unwrap().clone().unwrap();
         let mut base = BaseChat::new_with_model_capability(
             &ToolUse,
             "将输入内容整理为指定的json形式输出",

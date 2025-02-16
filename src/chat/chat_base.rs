@@ -17,6 +17,8 @@ pub enum ChatError {
     MissingUsageData,
     #[error("HTTP error with status code: {0}")]
     HttpError(u16),
+    #[error("Timeout error")]
+    TimeoutError,
     #[error("Unknown error")]
     UnknownError,
 }
@@ -94,17 +96,30 @@ impl BaseChat {
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<serde_json::Value, ChatError> {
-        let response = ureq::post(&self.base_url)
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.base_url)
             .header("Content-Type", "application/json")
-            .header("Authorization", &format!("Bearer {}", &self.api_key))
-            .send_json(request_body.clone());
+            .bearer_auth(&self.api_key)
+            .json(&request_body)
+            .send()
+            .await;
 
         match response {
             Ok(res) => {
-                let parsed: serde_json::Value = res.into_body().read_json()
+                // 处理 HTTP 状态码错误
+                let res = res.error_for_status().map_err(|e| {
+                    Report::new(ChatError::HttpError(e.status().unwrap().as_u16()))
+                        .attach_printable(format!("HTTP error with request body: {}", request_body))
+                })?;
+
+                // 解析 JSON 响应
+                let parsed: serde_json::Value = res.json()
+                    .await
                     .change_context(ChatError::ParseResponseError)
                     .attach_printable("Failed to parse response JSON")?;
 
+                // 更新 token 使用量
                 self.usage += parsed["usage"]["total_tokens"]
                     .as_i64()
                     .ok_or_else(|| Report::new(ChatError::MissingUsageData))
@@ -113,17 +128,18 @@ impl BaseChat {
 
                 Ok(parsed)
             }
-            Err(UreqError::StatusCode(code)) => {
-                Err(Report::new(ChatError::HttpError { 0: code })
-                    .attach_printable(format!("HTTP Error: Status Code {} with request body {}", code, request_body)))
+            Err(e) => {
+                if e.is_timeout() {
+                    Err(Report::new(ChatError::TimeoutError)
+                        .attach_printable(format!("Request timeout: {}", request_body)))
+                } else {
+                    Err(Report::new(ChatError::UnknownError)
+                        .attach_printable(format!("Network error: {} - {}", e, request_body)))
+                }
             }
-            Err(_) => {
-                Err(Report::new(ChatError::UnknownError)
-                    .attach_printable(format!("Unknown Error occurred with request body: {}", request_body)))
-            }
-
         }
     }
+
 
     // 私有方法：构建消息数组
     fn build_messages(&self) -> Vec<HashMap<String, String>> {

@@ -2480,6 +2480,7 @@ dependencies = [
  "indoc",
  "once_cell",
  "regex",
+ "reqwest",
  "schema_derive",
  "sea-orm",
  "serde",
