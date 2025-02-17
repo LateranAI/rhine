@@ -106,6 +106,7 @@ impl SingleChat {
                 .as_str(),
         );
         let answer = self.get_answer(user_input).await?;
+        info!("GetLLMAPIAnswer: {}", answer);
 
         ChatTool::get_json::<T>(answer.as_str(), schema)
             .await

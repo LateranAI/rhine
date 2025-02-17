@@ -1,9 +1,10 @@
 use error_stack::Result;
 use once_cell::sync::Lazy;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
+use dashmap::DashMap;
+use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
@@ -19,28 +20,21 @@ pub enum ConfigError {
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub api_source: HashMap<String, ApiSource>,
-    pub api_info: HashMap<(String, ModelCapability), ApiInfo>,
+    pub api_source: DashMap<String, ApiSource>,
+    pub api_info: DashMap<(String, ModelCapability), ApiInfo>,
 }
 
 impl Config {
     pub fn add_api_source(name: &str, base_url: &str, parallelism: usize) {
-        let mut cfg_lock = CFG.lock().unwrap();
-        let mut cfg_clone = cfg_lock.clone();
-
-        cfg_clone.api_source.insert(
+        CFG.api_source.insert(
             name.to_string(),
             ApiSource {
                 base_url: base_url.to_string(),
                 parallelism,
             },
         );
-        *cfg_lock = cfg_clone;
 
-        let mut thread_pool_lock = THREAD_POOL.lock().unwrap();
-        let mut thread_pool_clone = thread_pool_lock.clone();
-        thread_pool_clone.insert(name.to_string(), Arc::new(Semaphore::new(parallelism)));
-        *thread_pool_lock = thread_pool_clone;
+        THREAD_POOL.insert(base_url.to_string(), Arc::new(Semaphore::new(parallelism)));
     }
 
     pub fn add_api_info(
@@ -50,69 +44,57 @@ impl Config {
         source_name: &str,
         api_key: &str,
     ) {
-        let mut cfg_lock = CFG.lock().unwrap();
-        let mut cfg_clone = cfg_lock.clone();
-        let base_url = cfg_clone
+        let base_url = CFG
             .api_source
             .get(source_name)
             .unwrap()
             .base_url
             .clone();
-        cfg_clone.api_info.insert(
+        CFG.api_info.insert(
             (name.to_string(), capability),
             ApiInfo {
                 model: model.to_string(),
                 base_url,
                 api_key: api_key.to_string(),
+                client: Client::new(),
             },
         );
-        *cfg_lock = cfg_clone;
     }
 
     pub fn get_api_info_with_name(name: String) -> Result<ApiInfo, ConfigError> {
-        let cfg_lock = CFG
-            .lock()
-            .map_err(|_| ConfigError::ConfigLockFailure)?;
-        let cfg_ref = cfg_lock
-            .deref();
-
-        // 处理API信息不存在错误
-        cfg_ref
-            .api_info
+        CFG.api_info
             .iter()
-            .find_map(|((n, _), v)| (n == &name).then(|| v.clone()))
+            .find_map(|entry| {
+                (entry.key().0 == name).then(|| entry.value().clone())
+            })
             .ok_or(ConfigError::ApiInfoNotFound.into())
     }
 
-    pub fn get_api_info_with_capablity(
+    pub fn get_api_info_with_capability(
         capability: ModelCapability,
     ) -> Result<ApiInfo, ConfigError> {
-        let cfg_lock = CFG
-            .lock()
-            .map_err(|_| ConfigError::ConfigLockFailure)?;
-        let cfg_ref = cfg_lock
-            .deref();
-
-        // 处理API信息不存在错误
-        cfg_ref
-            .api_info
+        CFG.api_info
             .iter()
-            .find_map(|((_, c), v)| (c == &capability).then(|| v.clone()))
+            .find_map(|entry| {
+                (entry.key().1 == capability).then(|| entry.value().clone())
+            })
             .ok_or(ConfigError::ApiInfoNotFound.into())
     }
+
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ApiSource {
     pub base_url: String,
     pub parallelism: usize,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ApiInfo {
     pub model: String,
     pub base_url: String,
     pub api_key: String,
+    pub client: Client,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -122,12 +104,11 @@ pub enum ModelCapability {
     LongContext,
 }
 
-pub static CFG: Lazy<Mutex<Config>> = Lazy::new(|| {
-    Mutex::new(Config {
-        api_source: HashMap::new(),
-        api_info: HashMap::new(),
-    })
+pub static CFG: Lazy<Config> = Lazy::new(|| {
+    Config {
+        api_source: DashMap::new(),
+        api_info: DashMap::new(),
+    }
 });
 
-pub static THREAD_POOL: Lazy<Mutex<HashMap<String, Arc<Semaphore>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static THREAD_POOL: Lazy<DashMap<String, Arc<Semaphore>>> = Lazy::new(|| DashMap::new());

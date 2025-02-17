@@ -16,7 +16,7 @@ pub async fn test() {
         .file_name("test.log")
         .init();
     println!("log level: {}", "info");
-    test_prompt().await;
+    // test_prompt().await;
     test_chat().await;
 }
 

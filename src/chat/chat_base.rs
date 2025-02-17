@@ -1,13 +1,14 @@
+use crate::config::{CFG, Config, ModelCapability, THREAD_POOL};
 use error_stack::{Context, Report, Result, ResultExt};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use spider::tokio_stream::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
-use spider::tokio_stream::StreamExt;
 use thiserror::Error;
 use tracing::debug;
 use ureq::Error as UreqError;
-use crate::config::{Config, ModelCapability, CFG};
 
 #[derive(Debug, Error)]
 pub enum ChatError {
@@ -23,13 +24,13 @@ pub enum ChatError {
     UnknownError,
 }
 
-
 // ---------- 基础聊天结构 ----------
 #[derive(Debug, Clone)]
 pub struct BaseChat {
     pub model: String,
     pub base_url: String,
     pub api_key: String,
+    pub client: Client,
     pub character_prompt: String,
     pub messages: Vec<Message>,
     pub usage: i32,
@@ -37,17 +38,14 @@ pub struct BaseChat {
 }
 
 impl BaseChat {
-    pub fn new_with_api_name(
-        api_name: &str,
-        character_prompt: &str,
-        need_stream: bool,
-    ) -> Self {
+    pub fn new_with_api_name(api_name: &str, character_prompt: &str, need_stream: bool) -> Self {
         let api_info = Config::get_api_info_with_name(api_name.to_string()).unwrap();
 
         Self {
             model: api_info.model,
             base_url: api_info.base_url,
             api_key: api_info.api_key,
+            client: api_info.client,
             character_prompt: character_prompt.to_string(),
             messages: Vec::new(),
             usage: 0,
@@ -60,12 +58,13 @@ impl BaseChat {
         character_prompt: &str,
         need_stream: bool,
     ) -> Self {
-        let api_info = Config::get_api_info_with_capablity(model_capability.clone()).unwrap();
+        let api_info = Config::get_api_info_with_capability(model_capability.clone()).unwrap();
 
         Self {
             model: api_info.model,
             base_url: api_info.base_url,
             api_key: api_info.api_key,
+            client: api_info.client,
             character_prompt: character_prompt.to_string(),
             messages: Vec::new(),
             usage: 0,
@@ -96,14 +95,22 @@ impl BaseChat {
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<serde_json::Value, ChatError> {
-        let client = reqwest::Client::new();
-        let response = client
+        let semaphore_permit = THREAD_POOL
+            .get(&self.base_url)
+            .unwrap()
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
+        let response = self
+            .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .bearer_auth(&self.api_key)
             .json(&request_body)
             .send()
             .await;
+        drop(semaphore_permit);
 
         match response {
             Ok(res) => {
@@ -114,7 +121,8 @@ impl BaseChat {
                 })?;
 
                 // 解析 JSON 响应
-                let parsed: serde_json::Value = res.json()
+                let parsed: serde_json::Value = res
+                    .json()
                     .await
                     .change_context(ChatError::ParseResponseError)
                     .attach_printable("Failed to parse response JSON")?;
@@ -140,7 +148,6 @@ impl BaseChat {
         }
     }
 
-
     // 私有方法：构建消息数组
     fn build_messages(&self) -> Vec<HashMap<String, String>> {
         let mut messages = vec![HashMap::from([
@@ -158,7 +165,6 @@ impl BaseChat {
         messages
     }
 }
-
 
 // ---------- 数据结构 ----------
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

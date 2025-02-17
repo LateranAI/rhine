@@ -11,7 +11,7 @@ pub async fn test_chat() {
     Config::add_api_source("pumpkin", "https://api.pumpkinaigc.online/v1/chat/completions", 20);
     Config::add_api_info(
         "pumpkin-gpt-o3-mini",
-        "o3-mini",
+        "gpt-4o",
         Think,
         "pumpkin",
         "sk-cPdegaWl8YFcKZYs8a108b5f741844D9A1E0B90e724bBe23",
@@ -81,7 +81,7 @@ pub struct StudentInfo {
 #[schema(
     name = "SendEmailParams",
     description = "Parameters for sending email",
-    params = true,
+    inner = true,
     strict = true
 )]
 pub struct SendEmailParameters {
