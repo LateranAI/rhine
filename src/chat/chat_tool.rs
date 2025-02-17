@@ -23,7 +23,7 @@ impl ChatTool {
         json_schema: serde_json::Value,
     ) -> Result<T, ChatToolError> {
         let mut base = BaseChat::new_with_model_capability(
-            &ToolUse,
+            ToolUse,
             "将输入内容整理为指定的json形式输出",
             false,
         );
@@ -58,7 +58,7 @@ impl ChatTool {
         tools_schema: serde_json::Value,
     ) -> Result<serde_json::Value, ChatToolError> {
         let mut base = BaseChat::new_with_model_capability(
-            &ToolUse,
+            ToolUse,
             "根据输入的内容调用指定的函数",
             false,
         );

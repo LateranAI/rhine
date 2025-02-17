@@ -64,7 +64,7 @@ impl SingleChat {
     }
 
     pub fn new_with_model_capability(
-        model_capability: &ModelCapability,
+        model_capability: ModelCapability,
         character_prompt: &str,
         need_stream: bool,
     ) -> Self {

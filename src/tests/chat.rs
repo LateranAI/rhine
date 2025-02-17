@@ -1,18 +1,29 @@
-use crate::schema::json_schema::JsonSchema;
 use crate::chat::chat_single::SingleChat;
 use crate::config::Config;
-use crate::config::ModelCapability::Think;
+use crate::config::ModelCapability::{Think, ToolUse};
+use crate::schema::json_schema::JsonSchema;
 use crate::tests::format_test_block;
 use futures::executor::block_on;
-use schema_derive::{tool_schema_derive, JsonSchema};
+use schema_derive::{JsonSchema, tool_schema_derive};
 use serde::Deserialize;
 
 pub async fn test_chat() {
-    Config::add_api_source("pumpkin", "https://api.pumpkinaigc.online/v1/chat/completions", 20);
+    Config::add_api_source(
+        "pumpkin",
+        "https://api.pumpkinaigc.online/v1/chat/completions",
+        20,
+    );
     Config::add_api_info(
         "pumpkin-gpt-o3-mini",
-        "gpt-4o",
+        "o3-mini",
         Think,
+        "pumpkin",
+        "sk-cPdegaWl8YFcKZYs8a108b5f741844D9A1E0B90e724bBe23",
+    );
+    Config::add_api_info(
+        "pumpkin-gpt-4o",
+        "gpt-4o",
+        ToolUse,
         "pumpkin",
         "sk-cPdegaWl8YFcKZYs8a108b5f741844D9A1E0B90e724bBe23",
     );
@@ -30,16 +41,11 @@ async fn test_single_chat() {
 
 async fn test_single_chat_get_json() {
     let mut chat = SingleChat::new_with_api_name("pumpkin-gpt-o3-mini", "", false);
-    format_test_block("structured_answer", || {
-        format!(
-            "StudentInfo: {:?}",
-            block_on(async {
-                chat.get_json_answer::<StudentInfo>("编造一个学生信息")
-                    .await
-                    .unwrap()
-            })
-        )
-    });
+    let answer = chat
+        .get_json_answer::<StudentInfo>("编造一个学生信息")
+        .await
+        .unwrap();
+    format_test_block("structured_answer", || format!("StudentInfo: {:?}", answer));
 }
 
 async fn test_single_chat_get_tool() {

@@ -6,6 +6,7 @@ use serde_json::json;
 use spider::tokio_stream::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Duration;
 use thiserror::Error;
 use tracing::debug;
 use ureq::Error as UreqError;
@@ -54,7 +55,7 @@ impl BaseChat {
     }
 
     pub fn new_with_model_capability(
-        model_capability: &ModelCapability,
+        model_capability: ModelCapability,
         character_prompt: &str,
         need_stream: bool,
     ) -> Self {
@@ -108,6 +109,7 @@ impl BaseChat {
             .header("Content-Type", "application/json")
             .bearer_auth(&self.api_key)
             .json(&request_body)
+            // .timeout(Duration::from_secs(5))
             .send()
             .await;
         drop(semaphore_permit);
