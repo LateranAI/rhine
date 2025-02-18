@@ -3,8 +3,7 @@ use crate::config::Config;
 use crate::config::ModelCapability::{Think, ToolUse};
 use crate::schema::json_schema::JsonSchema;
 use crate::tests::format_test_block;
-use futures::executor::block_on;
-use schema_derive::{JsonSchema, tool_schema_derive};
+use rhine_schema_derive::{JsonSchema, tool_schema_derive};
 use serde::Deserialize;
 
 pub async fn test_chat() {

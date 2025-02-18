@@ -8,6 +8,3 @@ pub mod schema;
 pub mod utils;
 pub mod config;
 mod tests;
-
-
-pub use schema_derive;

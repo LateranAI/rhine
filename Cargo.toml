@@ -1,39 +1,40 @@
 [package]
 name = "rhine"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "code core of Rhine Lab"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-# 基础工具库
-once_cell = { version = "1.19.0" }
-futures = { version = "0.3.31" }
-thiserror = { version = "2.0.11" }
-tracing = { version = "0.1" }
-clia-tracing-config = { version = "0.2.7" }
-#tklog = { version = "0.2.9" }  # 预留作为tracing的转发后端提升日志输出性能
+# 核心基础库
+once_cell = { version = "1.20.3" }  # 单次初始化容器
+thiserror = { version = "2.0.11" }   # 错误定义宏
+error-stack = { version = "0.5.0"}   # 错误上下文追踪
 
-# 网络和 HTTP 相关
-tokio = { version = "1", features = ["full"] }
+# 异步编程
+futures = { version = "0.3.31" }     # Future 抽象基础
+tokio = { version = "1.43.0", features = ["full"] }  # 异步运行时
+tokio-stream = "0.1.17"              # 流处理扩展
+
+# 网络通信
 reqwest = { version = "0.12.12", features = ["json"] }
-ureq = { version = "3.0.4" , features = ["json"]}
 
-# 数据库相关
-sea-orm = { version = "1.1.4", features = ["runtime-tokio-native-tls", "sqlx-mysql", "macros"] }
-chrono = { version = "0.4.39" }
+# 数据序列化
+serde = { version = "1.0.217", features = ["derive"] }      # 通用序列化框架
+serde_json = { version = "1.0.138" } # JSON 序列化实现
+toml = "0.8.20"                      # TOML 格式支持
 
-# 序列化和数据格式
-serde = { version = "1.0.196" }
-serde_json = { version = "1.0.137" }
+# 观测诊断
+tracing = { version = "0.1.41", features = ["log"] }     # 结构化日志追踪
+clia-tracing-config = { version = "0.2.7" }  # 日志配置工具
+#tklog = { version = "0.2.9" }       # 高性能日志转发（预留）
 
-# 实用工具库
-spider = "2.27.50"
+# 文本处理
+indoc = "2.0.5"                      # 内嵌文档格式化
+regex = "1.11.1"                     # 正则表达式引擎
 
-schema_derive = { path = "./schema_derive"}
-indoc = "2.0.5"
-regex = "1.11.1"
-dashmap = "6.1.0"
-error-stack = { version = "0.5.0"}
-toml = "0.8.20"
+# 数据结构
+dashmap = "7.0.0-rc1"                # 并发哈希表
+
+rhine-schema-derive = { version = "0.1.0" }  # 自定义派生宏
 

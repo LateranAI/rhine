@@ -3,13 +3,9 @@ use error_stack::{Context, Report, Result, ResultExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use spider::tokio_stream::StreamExt;
+use tokio_stream::StreamExt;
 use std::collections::HashMap;
-use std::fmt;
-use std::time::Duration;
 use thiserror::Error;
-use tracing::debug;
-use ureq::Error as UreqError;
 
 #[derive(Debug, Error)]
 pub enum ChatError {
