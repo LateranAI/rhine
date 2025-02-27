@@ -17,7 +17,7 @@ tokio = { version = "1.43.0", features = ["full"] }  # 异步运行时
 tokio-stream = "0.1.17"              # 流处理扩展
 
 # 网络通信
-reqwest = { version = "0.12.12", features = ["json"] }
+reqwest = { version = "0.12.12", features = ["json", "stream"] }
 
 # 数据序列化
 serde = { version = "1.0.217", features = ["derive"] }      # 通用序列化框架
@@ -37,4 +37,5 @@ regex = "1.11.1"                     # 正则表达式引擎
 dashmap = "7.0.0-rc1"                # 并发哈希表
 
 rhine-schema-derive = { version = "0.1.0" }  # 自定义派生宏
+bytes = "1.10.0"
 

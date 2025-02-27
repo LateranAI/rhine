@@ -2,18 +2,11 @@ use error_stack::{Result, ResultExt, Report};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tracing::log::info;
-use crate::chat::chat_base::{BaseChat, Role};
+use crate::chat::chat_base::{BaseChat, ChatError, Role};
 use crate::config::{ModelCapability, CFG};
 use crate::config::ModelCapability::ToolUse;
 use crate::schema::json_schema::JsonSchema;
 
-#[derive(Error, Debug)]
-pub enum ChatToolError {
-    #[error("Failed to get json")]
-    GetJsonError,
-    #[error("Failed to get function")]
-    GetFunctionError,
-}
 
 pub struct ChatTool;
 
@@ -21,7 +14,7 @@ impl ChatTool {
     pub async fn get_json<T: DeserializeOwned + 'static + JsonSchema>(
         text_answer: &str,
         json_schema: serde_json::Value,
-    ) -> Result<T, ChatToolError> {
+    ) -> Result<T, ChatError> {
         let mut base = BaseChat::new_with_model_capability(
             ToolUse,
             "将输入内容整理为指定的json形式输出",
@@ -32,14 +25,14 @@ impl ChatTool {
 
         let request_body = add_response_format(base.build_request_body(), json_schema);
 
-        let response = base.send_request(request_body)
+        let response = base.get_response(request_body)
             .await
-            .change_context(ChatToolError::GetJsonError)
+            .change_context(ChatError::GetJsonError)
             .attach_printable("Failed to send request")?;
 
         let json_answer = response["choices"][0]["message"]["content"]
             .as_str()
-            .ok_or(Report::new(ChatToolError::GetJsonError))
+            .ok_or(Report::new(ChatError::GetJsonError))
             .attach_printable("Failed to get content from response")?;
 
 
@@ -49,14 +42,14 @@ impl ChatTool {
         base.add_message(Role::Assistant, json_answer);
 
         serde_json::from_str(json_answer)
-            .change_context(ChatToolError::GetJsonError)
+            .change_context(ChatError::GetJsonError)
             .attach_printable_lazy(|| format!("Failed to deserialize JSON: {}", json_answer))
     }
 
     pub async fn get_function(
         text_answer: &str,
         tools_schema: serde_json::Value,
-    ) -> Result<serde_json::Value, ChatToolError> {
+    ) -> Result<serde_json::Value, ChatError> {
         let mut base = BaseChat::new_with_model_capability(
             ToolUse,
             "根据输入的内容调用指定的函数",
@@ -67,9 +60,9 @@ impl ChatTool {
 
         let request_body = add_tools(base.build_request_body(), tools_schema);
 
-        let response = base.send_request(request_body)
+        let response = base.get_response(request_body)
             .await
-            .change_context(ChatToolError::GetFunctionError)
+            .change_context(ChatError::GetFunctionError)
             .attach_printable("Failed to send request")?;
 
         let json_answer = response["choices"][0]["message"]["tool_calls"][0]["function"].clone();

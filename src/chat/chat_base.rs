@@ -1,22 +1,38 @@
 use crate::config::{CFG, Config, ModelCapability, THREAD_POOL};
 use error_stack::{Context, Report, Result, ResultExt};
-use reqwest::Client;
+use reqwest::{Client, Error, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio_stream::StreamExt;
 use std::collections::HashMap;
+use futures::{Stream, TryStreamExt};
 use thiserror::Error;
+use tokio_stream::StreamExt;
+use bytes::Bytes;
+use tokio::sync::OwnedSemaphorePermit;
 
 #[derive(Debug, Error)]
 pub enum ChatError {
-    #[error("Failed to parse response")]
-    ParseResponseError,
-    #[error("Missing usage data")]
-    MissingUsageData,
+    // prompt
+    #[error("Failed to assemble output description")]
+    AssembleOutputDescriptionError,
+
+    // Http connection
     #[error("HTTP error with status code: {0}")]
     HttpError(u16),
     #[error("Timeout error")]
     TimeoutError,
+
+    // result
+    #[error("Failed to parse response")]
+    ParseResponseError,
+    #[error("Missing usage data")]
+    MissingUsageData,
+
+    // tool use
+    #[error("Failed to get json")]
+    GetJsonError,
+    #[error("Failed to get function")]
+    GetFunctionError,
     #[error("Unknown error")]
     UnknownError,
 }
@@ -76,6 +92,22 @@ impl BaseChat {
         });
     }
 
+    pub fn build_messages(&self) -> Vec<HashMap<String, String>> {
+        let mut messages = vec![HashMap::from([
+            ("role".to_owned(), "system".to_owned()),
+            ("content".to_owned(), self.character_prompt.clone()),
+        ])];
+
+        messages.extend(
+            self.messages
+                .iter()
+                .map(|m| m.to_api_format(&m.role))
+                .collect::<Vec<_>>(),
+        );
+
+        messages
+    }
+
     pub fn build_request_body(&self) -> serde_json::Value {
         let messages = self.build_messages();
 
@@ -91,6 +123,20 @@ impl BaseChat {
     pub async fn send_request(
         &mut self,
         request_body: serde_json::Value,
+    ) -> core::result::Result<Response, Error> {
+        self.client
+            .post(&self.base_url)
+            .header("Content-Type", "application/json")
+            .bearer_auth(&self.api_key)
+            .json(&request_body)
+            // .timeout(Duration::from_secs(5))
+            .send()
+            .await
+    }
+
+    pub async fn get_response(
+        &mut self,
+        request_body: serde_json::Value,
     ) -> Result<serde_json::Value, ChatError> {
         let semaphore_permit = THREAD_POOL
             .get(&self.base_url)
@@ -99,15 +145,9 @@ impl BaseChat {
             .acquire_owned()
             .await
             .unwrap();
-        let response = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .bearer_auth(&self.api_key)
-            .json(&request_body)
-            // .timeout(Duration::from_secs(5))
-            .send()
-            .await;
+
+        let response = self.send_request(request_body.clone()).await;
+
         drop(semaphore_permit);
 
         match response {
@@ -146,21 +186,105 @@ impl BaseChat {
         }
     }
 
-    // 私有方法：构建消息数组
-    fn build_messages(&self) -> Vec<HashMap<String, String>> {
-        let mut messages = vec![HashMap::from([
-            ("role".to_owned(), "system".to_owned()),
-            ("content".to_owned(), self.character_prompt.clone()),
-        ])];
+    pub fn get_content_from_resp(resp: &serde_json::Value) -> Result<String, ChatError> {
+        let content = resp.get("choices")
+            .and_then(|c| {c.get(0)})
+            .and_then(|c| {c.get("message")})
+            .and_then(|m| {m.get("content")});
+        match content {
+            Some(content) => Ok(content.to_string()),
+            None => {
+                 Err(Report::new(ChatError::ParseResponseError))
+                    .attach_printable("Failed to parse response content")
+            }
+        }
+    }
 
-        messages.extend(
-            self.messages
-                .iter()
-                .map(|m| m.to_api_format(&m.role))
-                .collect::<Vec<_>>(),
-        );
+    pub async fn get_stream_response(
+        &mut self,
+        request_body: serde_json::Value,
+    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>>, OwnedSemaphorePermit), ChatError> {
+        let semaphore_permit = THREAD_POOL
+            .get(&self.base_url)
+            .unwrap()
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
 
-        messages
+        let response = self.send_request(request_body.clone()).await;
+
+        // drop(semaphore_permit);
+
+        match response {
+            Ok(res) => {
+                // 处理 HTTP 状态码错误
+                let res = res.error_for_status().map_err(|e| {
+                    Report::new(ChatError::HttpError(e.status().unwrap().as_u16()))
+                        .attach_printable(format!("HTTP error with request body: {}", request_body))
+                })?;
+
+                Ok((res.bytes_stream(), semaphore_permit))
+            }
+            Err(e) => {
+                if e.is_timeout() {
+                    Err(Report::new(ChatError::TimeoutError)
+                        .attach_printable(format!("Request timeout: {}", request_body)))
+                } else {
+                    Err(Report::new(ChatError::UnknownError)
+                        .attach_printable(format!("Network error: {} - {}", e, request_body)))
+                }
+            }
+        }
+    }
+
+    pub async fn get_content_from_stream_resp(
+        stream: impl Stream<Item = reqwest::Result<Bytes>>,
+        semaphore_permit: OwnedSemaphorePermit,
+    ) -> Result<String, ChatError> {
+        // 创建用于收集结果的结构
+        #[derive(Default)]
+        struct StreamResult {
+            content: String,
+            usage: Option<serde_json::Value>,
+        }
+
+        let result = stream
+            .map_err(|err| Report::new(ChatError::HttpError(0))
+                .attach_printable(format!("Failed to get response: {}", err)))
+            .try_fold(StreamResult::default(), |mut result, chunk| async move {
+                String::from_utf8_lossy(&chunk)
+                    .split('\n')
+                    .filter(|line| !line.is_empty() && *line != "data: [DONE]")
+                    .try_for_each(|line| {
+                        // 移除可能的 "data: " 前缀 (用于SSE)
+                        let json_str = line.strip_prefix("data: ").unwrap_or(line);
+
+                        serde_json::from_str::<serde_json::Value>(json_str)
+                            .map_err(|err| Report::new(ChatError::ParseResponseError)
+                                .attach_printable(format!("Failed to parse JSON: {}", err)))
+                            .map(|json| {
+                                json.get("choices")
+                                    .and_then(|c| c.as_array())
+                                    .map(|choices| {
+                                        choices.iter()
+                                            .filter_map(|choice| choice.get("delta"))
+                                            .filter_map(|delta| delta.get("content").and_then(|c| c.as_str()))
+                                            .for_each(|content| result.content.push_str(content));
+                                    });
+                                // 处理usage信息
+                                json.get("usage")
+                                    .filter(|u| !u.is_null())
+                                    .map(|usage| result.usage = Some(usage.clone()));
+                            })
+                    })?;
+
+                Ok(result)
+            })
+            .await?;
+
+        drop(semaphore_permit);
+        Ok(result.content)
     }
 }
 

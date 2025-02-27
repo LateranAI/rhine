@@ -69,7 +69,7 @@ impl MultiChat {
 
         let response = self
             .base
-            .send_request(request_body)
+            .get_response(request_body)
             .await
             .change_context(MultiChatError::ApiRequestFailed)?; // 增加了错误处理
 
