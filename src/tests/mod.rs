@@ -17,7 +17,7 @@ pub async fn test() {
         .init();
     println!("log level: {}", "info");
     test_prompt().await;
-    // test_chat().await;
+    test_chat().await;
 }
 
 pub fn format_test_block<F>(title: &str, content_fn: F)

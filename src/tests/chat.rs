@@ -28,8 +28,8 @@ pub async fn test_chat() {
     );
 
     test_single_chat().await;
-    // test_single_chat_get_json().await;
-    // test_single_chat_get_tool().await;
+    test_single_chat_get_json().await;
+    test_single_chat_get_tool().await;
 }
 
 async fn test_single_chat() {

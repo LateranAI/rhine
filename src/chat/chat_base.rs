@@ -9,12 +9,11 @@ use serde_json::json;
 
 // 错误处理 / Error handling
 use thiserror::Error;
-use error_stack::{Context, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 // 异步运行时和流处理 / Async runtime and stream processing
 use futures::{Stream, TryStreamExt};
 use tokio::sync::OwnedSemaphorePermit;
-use tokio_stream::StreamExt;
 
 // 网络请求 / Network requests
 use reqwest::{Client, Error, Response};
@@ -61,6 +60,20 @@ pub enum ChatError {
     /// Failed to get function
     #[error("Failed to get function")]
     GetFunctionError,
+
+    /// 没有提供角色提示词
+    /// No character prompts provided
+    #[error("At least one character prompt required")]
+    NoCharacterPrompts,
+    /// 未定义的角色
+    /// Undefined character
+    #[error("Undefined character: {0}")]
+    UndefinedCharacter(String),
+    /// 未选择角色
+    /// No character selected
+    #[error("No character selected")]
+    NoCharacterSelected,
+
     /// 未知错误
     /// Unknown error
     #[error("Unknown error")]
