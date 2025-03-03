@@ -203,7 +203,7 @@ impl BaseChat {
     pub async fn get_stream_response(
         &mut self,
         request_body: serde_json::Value,
-    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>>, OwnedSemaphorePermit), ChatError> {
+    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>>  + Send + Unpin, OwnedSemaphorePermit), ChatError> {
         let semaphore_permit = THREAD_POOL
             .get(&self.base_url)
             .unwrap()
@@ -239,7 +239,7 @@ impl BaseChat {
     }
 
     pub async fn get_content_from_stream_resp(
-        stream: impl Stream<Item = reqwest::Result<Bytes>>,
+        stream: impl Stream<Item = reqwest::Result<Bytes>> + Send + Unpin,
         semaphore_permit: OwnedSemaphorePermit,
     ) -> Result<String, ChatError> {
         // 创建用于收集结果的结构

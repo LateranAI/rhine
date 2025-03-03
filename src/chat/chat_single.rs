@@ -34,7 +34,6 @@ pub enum ToolCallError {
 }
 
 
-
 #[derive(Debug, Clone)]
 pub struct SingleChat {
     pub base: BaseChat,
