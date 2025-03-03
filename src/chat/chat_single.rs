@@ -310,11 +310,11 @@ impl SingleChat {
         // 提取原始函数调用文本
         // Extract original function call texts
         let text_calls = extract_tool_uses(&answer_with_text_calls);
-        
+
         // 预分配结果向量
         // Pre-allocate result vector
         let mut results = Vec::with_capacity(text_calls.len());
-        
+
         if text_calls.is_empty() {
             // 如果没有函数调用，直接返回原始回答
             // If there are no function calls, return the original answer
@@ -332,25 +332,30 @@ impl SingleChat {
         // 创建工具模式的副本用于任务间共享
         // Create a copy of the tool schema for sharing between tasks
         let tools_schema = self.tools_schema.clone();
-        
+
         // 创建任务
         // Create tasks
         let tasks = text_calls.into_iter().map(|text_call| {
             let tools_schema_clone = tools_schema.clone();
             task::spawn(async move {
                 Self::process_tool_call(text_call, tools_schema_clone).await
-                    .unwrap_or_else(|err| format!("Function Calling error: {:?}", err))
             })
         }).collect::<Vec<_>>();
-        
+
         // 并行等待所有任务完成
         // Wait for all tasks to complete in parallel
         for task in tasks {
             match task.await {
-                Ok(result) => results.push(result),
+                Ok(result) => {
+                    match result {
+                        Ok(success_result) => results.push(success_result),
+                        Err(err) => return Err(err) // 正确地传播错误
+                    }
+                },
                 Err(e) => {
-                    info!("Task join error: {:?}", e);
-                    results.push(format!("Task execution error: {:?}", e));
+                    return Err(Report::new(ToolCallError::FunctionExecution(format!(
+                        "Task join error: {:?}", e
+                    ))));
                 }
             }
         }

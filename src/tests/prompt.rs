@@ -2,7 +2,6 @@ use crate::tests::format_test_block;
 use crate::schema::json_schema::JsonSchema;
 use rhine_schema_derive::{tool_schema_derive, JsonSchema};
 use serde::Deserialize;
-use std::fmt::Display;
 use crate::prompt::assembler::{assemble_output_description, assemble_tools_prompt};
 use crate::schema::tool_schema::get_tool_function;
 
