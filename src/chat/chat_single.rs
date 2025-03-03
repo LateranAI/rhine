@@ -326,7 +326,7 @@ impl SingleChat {
         let clean_answer = text_calls
             .iter()
             .fold(answer_with_text_calls, |acc, call| {
-                acc.replace(&format!("<FunctionCalling>{}</FunctionCalling>", call), "")
+                acc.replace(&format!("<ToolUse>{}</ToolUse>", call), "")
             });
 
         // 创建工具模式的副本用于任务间共享

@@ -61,7 +61,7 @@ pub async fn tool_use(text_answer: &str, tools_schema: serde_json::Value) -> Res
 }
 
 pub fn extract_tool_uses(input: &str) -> Vec<String> {
-    // 定义正则表达式，匹配 <FunctionCalling> 标签包裹的内容，支持多行
+    // 定义正则表达式，匹配 <ToolUse> 标签包裹的内容，支持多行
     let re = Regex::new(r"(?s)<ToolUse>(.*?)</ToolUse>").unwrap();
 
     re.captures_iter(input)
