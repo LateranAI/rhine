@@ -6,7 +6,10 @@ description = "code core of Rhine Lab"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+rhine-schema-derive = { version = "0.1.0" }  # 自定义派生宏
+
 # 核心基础库
+dashmap = "7.0.0-rc1"                # 并发哈希表
 once_cell = { version = "1.20.3" }  # 单次初始化容器
 thiserror = { version = "2.0.11" }   # 错误定义宏
 error-stack = { version = "0.5.0"}   # 错误上下文追踪
@@ -18,6 +21,7 @@ tokio-stream = "0.1.17"              # 流处理扩展
 
 # 网络通信
 reqwest = { version = "0.12.12", features = ["json", "stream"] }
+bytes = "1.10.0"
 
 # 数据序列化
 serde = { version = "1.0.217", features = ["derive"] }      # 通用序列化框架
@@ -32,10 +36,4 @@ clia-tracing-config = { version = "0.2.7" }  # 日志配置工具
 # 文本处理
 indoc = "2.0.5"                      # 内嵌文档格式化
 regex = "1.11.1"                     # 正则表达式引擎
-
-# 数据结构
-dashmap = "7.0.0-rc1"                # 并发哈希表
-
-rhine-schema-derive = { version = "0.1.0" }  # 自定义派生宏
-bytes = "1.10.0"
 

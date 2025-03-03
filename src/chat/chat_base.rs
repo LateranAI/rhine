@@ -1,56 +1,114 @@
-use crate::config::{CFG, Config, ModelCapability, THREAD_POOL};
-use error_stack::{Context, Report, Result, ResultExt};
-use reqwest::{Client, Error, Response};
+// 标准库引用 / Standard library imports
+use std::collections::HashMap;
+
+// 外部库引用 / External library imports (按泛用程度从高到低排序 / ordered by generality from high to low)
+// 基础数据类型和序列化 / Basic data types and serialization
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use futures::{Stream, TryStreamExt};
-use thiserror::Error;
-use tokio_stream::StreamExt;
-use bytes::Bytes;
-use tokio::sync::OwnedSemaphorePermit;
 
+// 错误处理 / Error handling
+use thiserror::Error;
+use error_stack::{Context, Report, Result, ResultExt};
+
+// 异步运行时和流处理 / Async runtime and stream processing
+use futures::{Stream, TryStreamExt};
+use tokio::sync::OwnedSemaphorePermit;
+use tokio_stream::StreamExt;
+
+// 网络请求 / Network requests
+use reqwest::{Client, Error, Response};
+
+// 本地库引用 / Local library imports
+use crate::config::{Config, ModelCapability, THREAD_POOL};
+
+/// 聊天相关错误枚举
+/// Chat related error enumeration
 #[derive(Debug, Error)]
 pub enum ChatError {
-    // prompt
+    // 提示相关错误 / Prompt related errors
+    /// 组装输出描述失败
+    /// Failed to assemble output description
     #[error("Failed to assemble output description")]
     AssembleOutputDescriptionError,
 
-    // Http connection
+    // HTTP 连接错误 / HTTP connection errors
+    /// HTTP 错误，包含状态码
+    /// HTTP error with status code
     #[error("HTTP error with status code: {0}")]
     HttpError(u16),
+    /// 超时错误
+    /// Timeout error
     #[error("Timeout error")]
     TimeoutError,
 
-    // result
+    // 结果解析错误 / Result parsing errors
+    /// 解析响应失败
+    /// Failed to parse response
     #[error("Failed to parse response")]
     ParseResponseError,
+    /// 缺少使用量数据
+    /// Missing usage data
     #[error("Missing usage data")]
     MissingUsageData,
 
-    // tool use
+    // 工具使用错误 / Tool usage errors
+    /// 获取 JSON 失败
+    /// Failed to get JSON
     #[error("Failed to get json")]
     GetJsonError,
+    /// 获取函数失败
+    /// Failed to get function
     #[error("Failed to get function")]
     GetFunctionError,
+    /// 未知错误
+    /// Unknown error
     #[error("Unknown error")]
     UnknownError,
 }
 
-// ---------- 基础聊天结构 ----------
+/// 基础聊天结构体，用于与 AI 对话服务交互
+/// Base chat structure for interacting with AI conversation services
 #[derive(Debug, Clone)]
 pub struct BaseChat {
+    /// 模型名称
+    /// Model name
     pub model: String,
+    /// 基础 URL
+    /// Base URL
     pub base_url: String,
+    /// API 密钥
+    /// API key
     pub api_key: String,
+    /// HTTP 客户端
+    /// HTTP client
     pub client: Client,
+    /// 角色提示词
+    /// Character prompt
     pub character_prompt: String,
+    /// 消息列表
+    /// Message list
     pub messages: Vec<Message>,
+    /// Token 使用量
+    /// Token usage
     pub usage: i32,
+    /// 是否需要流式响应
+    /// Whether streaming response is needed
     pub need_stream: bool,
 }
 
 impl BaseChat {
+    /// 使用 API 名称创建新的聊天实例
+    ///
+    /// Create a new chat instance with API name
+    ///
+    /// # 参数 / Parameters
+    /// * `api_name` - API 名称 / API name
+    /// * `character_prompt` - 角色提示词 / Character prompt
+    /// * `need_stream` - 是否需要流式响应 / Whether streaming response is needed
+    ///
+    /// # 返回 / Returns
+    /// * `Self` - 新创建的 BaseChat 实例 / Newly created BaseChat instance
     pub fn new_with_api_name(api_name: &str, character_prompt: &str, need_stream: bool) -> Self {
         let api_info = Config::get_api_info_with_name(api_name.to_string()).unwrap();
 
@@ -66,6 +124,17 @@ impl BaseChat {
         }
     }
 
+    /// 使用模型能力创建新的聊天实例
+    ///
+    /// Create a new chat instance with model capability
+    ///
+    /// # 参数 / Parameters
+    /// * `model_capability` - 模型能力枚举 / Model capability enum
+    /// * `character_prompt` - 角色提示词 / Character prompt
+    /// * `need_stream` - 是否需要流式响应 / Whether streaming response is needed
+    ///
+    /// # 返回 / Returns
+    /// * `Self` - 新创建的 BaseChat 实例 / Newly created BaseChat instance
     pub fn new_with_model_capability(
         model_capability: ModelCapability,
         character_prompt: &str,
@@ -85,6 +154,13 @@ impl BaseChat {
         }
     }
 
+    /// 添加消息到消息列表
+    ///
+    /// Add a message to the message list
+    ///
+    /// # 参数 / Parameters
+    /// * `role` - 消息角色 / Message role
+    /// * `content` - 消息内容 / Message content
     pub fn add_message(&mut self, role: Role, content: &str) {
         self.messages.push(Message {
             role,
@@ -92,6 +168,12 @@ impl BaseChat {
         });
     }
 
+    /// 构建 API 所需的消息格式
+    ///
+    /// Build messages in the format required by the API
+    ///
+    /// # 返回 / Returns
+    /// * `Vec<HashMap<String, String>>` - 格式化后的消息列表 / Formatted message list
     pub fn build_messages(&self) -> Vec<HashMap<String, String>> {
         let mut messages = vec![HashMap::from([
             ("role".to_owned(), "system".to_owned()),
@@ -108,18 +190,31 @@ impl BaseChat {
         messages
     }
 
+    /// 构建请求体
+    ///
+    /// Build request body
+    ///
+    /// # 返回 / Returns
+    /// * `serde_json::Value` - JSON 格式的请求体 / Request body in JSON format
     pub fn build_request_body(&self) -> serde_json::Value {
         let messages = self.build_messages();
 
-        let body = json!({
+        json!({
             "model": self.model,
             "messages": messages,
             "stream": self.need_stream,
-        });
-
-        body
+        })
     }
 
+    /// 发送 HTTP 请求
+    ///
+    /// Send HTTP request
+    ///
+    /// # 参数 / Parameters
+    /// * `request_body` - 请求体 / Request body
+    ///
+    /// # 返回 / Returns
+    /// * `core::result::Result<Response, Error>` - HTTP 响应结果 / HTTP response result
     pub async fn send_request(
         &mut self,
         request_body: serde_json::Value,
@@ -129,15 +224,26 @@ impl BaseChat {
             .header("Content-Type", "application/json")
             .bearer_auth(&self.api_key)
             .json(&request_body)
-            // .timeout(Duration::from_secs(5))
+            // .timeout(Duration::from_secs(5))  // 启用此行可添加超时设置 / Uncomment this line to add timeout
             .send()
             .await
     }
 
+    /// 获取 API 响应
+    ///
+    /// Get API response
+    ///
+    /// # 参数 / Parameters
+    /// * `request_body` - 请求体 / Request body
+    ///
+    /// # 返回 / Returns
+    /// * `Result<serde_json::Value, ChatError>` - API 响应结果 / API response result
     pub async fn get_response(
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<serde_json::Value, ChatError> {
+        // 获取信号量许可
+        // Acquire semaphore permit
         let semaphore_permit = THREAD_POOL
             .get(&self.base_url)
             .unwrap()
@@ -146,19 +252,25 @@ impl BaseChat {
             .await
             .unwrap();
 
+        // 发送请求
+        // Send request
         let response = self.send_request(request_body.clone()).await;
 
+        // 释放信号量许可
+        // Release semaphore permit
         drop(semaphore_permit);
 
         match response {
             Ok(res) => {
                 // 处理 HTTP 状态码错误
+                // Handle HTTP status code errors
                 let res = res.error_for_status().map_err(|e| {
                     Report::new(ChatError::HttpError(e.status().unwrap().as_u16()))
                         .attach_printable(format!("HTTP error with request body: {}", request_body))
                 })?;
 
                 // 解析 JSON 响应
+                // Parse JSON response
                 let parsed: serde_json::Value = res
                     .json()
                     .await
@@ -166,6 +278,7 @@ impl BaseChat {
                     .attach_printable("Failed to parse response JSON")?;
 
                 // 更新 token 使用量
+                // Update token usage
                 self.usage += parsed["usage"]["total_tokens"]
                     .as_i64()
                     .ok_or_else(|| Report::new(ChatError::MissingUsageData))
@@ -186,24 +299,46 @@ impl BaseChat {
         }
     }
 
+    /// 从响应中提取内容
+    ///
+    /// Extract content from response
+    ///
+    /// # 参数 / Parameters
+    /// * `resp` - API 响应 / API response
+    ///
+    /// # 返回 / Returns
+    /// * `Result<String, ChatError>` - 提取的内容 / Extracted content
     pub fn get_content_from_resp(resp: &serde_json::Value) -> Result<String, ChatError> {
         let content = resp.get("choices")
-            .and_then(|c| {c.get(0)})
-            .and_then(|c| {c.get("message")})
-            .and_then(|m| {m.get("content")});
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"));
+
         match content {
             Some(content) => Ok(content.to_string()),
             None => {
-                 Err(Report::new(ChatError::ParseResponseError))
+                Err(Report::new(ChatError::ParseResponseError))
                     .attach_printable("Failed to parse response content")
             }
         }
     }
 
+    /// 获取流式响应
+    ///
+    /// Get streaming response
+    ///
+    /// # 参数 / Parameters
+    /// * `request_body` - 请求体 / Request body
+    ///
+    /// # 返回 / Returns
+    /// * `Result<(impl Stream<Item=reqwest::Result<Bytes>> + Send + Unpin, OwnedSemaphorePermit), ChatError>` -
+    ///   字节流和信号量许可 / Byte stream and semaphore permit
     pub async fn get_stream_response(
         &mut self,
         request_body: serde_json::Value,
-    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>>  + Send + Unpin, OwnedSemaphorePermit), ChatError> {
+    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>> + Send + Unpin, OwnedSemaphorePermit), ChatError> {
+        // 获取信号量许可
+        // Acquire semaphore permit
         let semaphore_permit = THREAD_POOL
             .get(&self.base_url)
             .unwrap()
@@ -212,13 +347,14 @@ impl BaseChat {
             .await
             .unwrap();
 
+        // 发送请求
+        // Send request
         let response = self.send_request(request_body.clone()).await;
-
-        // drop(semaphore_permit);
 
         match response {
             Ok(res) => {
                 // 处理 HTTP 状态码错误
+                // Handle HTTP status code errors
                 let res = res.error_for_status().map_err(|e| {
                     Report::new(ChatError::HttpError(e.status().unwrap().as_u16()))
                         .attach_printable(format!("HTTP error with request body: {}", request_body))
@@ -238,11 +374,22 @@ impl BaseChat {
         }
     }
 
+    /// 从流式响应中提取内容
+    ///
+    /// Extract content from streaming response
+    ///
+    /// # 参数 / Parameters
+    /// * `stream` - 字节流 / Byte stream
+    /// * `semaphore_permit` - 信号量许可 / Semaphore permit
+    ///
+    /// # 返回 / Returns
+    /// * `Result<String, ChatError>` - 提取的内容 / Extracted content
     pub async fn get_content_from_stream_resp(
         stream: impl Stream<Item = reqwest::Result<Bytes>> + Send + Unpin,
         semaphore_permit: OwnedSemaphorePermit,
     ) -> Result<String, ChatError> {
         // 创建用于收集结果的结构
+        // Create structure for collecting results
         #[derive(Default)]
         struct StreamResult {
             content: String,
@@ -258,12 +405,15 @@ impl BaseChat {
                     .filter(|line| !line.is_empty() && *line != "data: [DONE]")
                     .try_for_each(|line| {
                         // 移除可能的 "data: " 前缀 (用于SSE)
+                        // Remove possible "data: " prefix (for SSE)
                         let json_str = line.strip_prefix("data: ").unwrap_or(line);
 
                         serde_json::from_str::<serde_json::Value>(json_str)
                             .map_err(|err| Report::new(ChatError::ParseResponseError)
                                 .attach_printable(format!("Failed to parse JSON: {}", err)))
                             .map(|json| {
+                                // 提取内容
+                                // Extract content
                                 json.get("choices")
                                     .and_then(|c| c.as_array())
                                     .map(|choices| {
@@ -272,7 +422,9 @@ impl BaseChat {
                                             .filter_map(|delta| delta.get("content").and_then(|c| c.as_str()))
                                             .for_each(|content| result.content.push_str(content));
                                     });
-                                // 处理usage信息
+
+                                // 处理 usage 信息
+                                // Process usage information
                                 json.get("usage")
                                     .filter(|u| !u.is_null())
                                     .map(|usage| result.usage = Some(usage.clone()));
@@ -283,67 +435,95 @@ impl BaseChat {
             })
             .await?;
 
+        // 释放信号量许可
+        // Release semaphore permit
         drop(semaphore_permit);
         Ok(result.content)
     }
 }
 
-// ---------- 数据结构 ----------
+/// 聊天角色枚举
+/// Chat role enumeration
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// 系统角色
+    /// System role
     System,
+    /// 用户角色
+    /// User role
     User,
+    /// 助手角色
+    /// Assistant role
     Assistant,
+    /// 自定义角色
+    /// Custom character role
     #[serde(untagged)]
     Character(String),
 }
 
 impl From<&str> for Role {
+    /// 从字符串创建角色
+    ///
+    /// Create role from string
+    ///
+    /// # 参数 / Parameters
+    /// * `s` - 角色字符串 / Role string
+    ///
+    /// # 返回 / Returns
+    /// * `Self` - 角色枚举 / Role enum
     fn from(s: &str) -> Self {
         match s {
             "system" => Self::System,
             "user" => Self::User,
             "assistant" => Self::Assistant,
-            other => Self::Character(other.to_string()), // 关键转换！
+            other => Self::Character(other.to_string()), // 自定义角色转换 / Custom role conversion
         }
     }
 }
 
+/// 消息结构体
+/// Message structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    /// 消息角色
+    /// Message role
     pub role: Role,
+    /// 消息内容
+    /// Message content
     pub content: String,
 }
 
 impl Message {
+    /// 将消息转换为 API 格式
+    ///
+    /// Convert message to API format
+    ///
+    /// # 参数 / Parameters
+    /// * `current_speaker` - 当前发言者角色 / Current speaker role
+    ///
+    /// # 返回 / Returns
+    /// * `HashMap<String, String>` - API 格式的消息 / Message in API format
     pub fn to_api_format(&self, current_speaker: &Role) -> HashMap<String, String> {
-        let (mut role_str, mut content) = match &self.role {
+        let (role_str, content) = match &self.role {
             Role::System => ("system", self.content.clone()),
             Role::User => ("user", self.content.clone()),
             Role::Assistant => ("assistant", self.content.clone()),
             Role::Character(c) => {
                 // 判断是否是当前发言者
+                // Check if it's the current speaker
                 if self.role == *current_speaker {
-                    // 是发言者：作为assistant输出
+                    // 是发言者：作为 assistant 输出
+                    // Is the speaker: output as assistant
                     ("assistant", self.content.clone())
                 } else {
-                    // 非发言者：添加前缀并作为user输出
+                    // 非发言者：添加前缀并作为 user 输出
+                    // Not the speaker: add prefix and output as user
                     let prefixed_content = format!("{} said: {}", c, self.content);
                     ("user", prefixed_content)
                 }
             }
         };
-
-        // 针对Assistant角色的特殊处理（可选）
-        if let Role::Assistant = self.role {
-            if self.role == *current_speaker {
-                role_str = "assistant";
-            } else {
-                role_str = "user";
-                content = format!("Assistant said: {}", self.content);
-            }
-        }
 
         HashMap::from([
             ("role".to_string(), role_str.to_string()),
