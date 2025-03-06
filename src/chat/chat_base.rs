@@ -17,7 +17,7 @@ use tokio::sync::OwnedSemaphorePermit;
 
 // 网络请求 / Network requests
 use reqwest::{Client, Error, Response};
-
+use crate::chat::message::{Messages, Role};
 // 本地库引用 / Local library imports
 use crate::config::{Config, ModelCapability, THREAD_POOL};
 
@@ -99,9 +99,9 @@ pub struct BaseChat {
     /// 角色提示词
     /// Character prompt
     pub character_prompt: String,
-    /// 消息列表
-    /// Message list
-    pub messages: Vec<Message>,
+    /// 消息树
+    /// Message Tree
+    pub messages: Option<Messages>,
     /// Token 使用量
     /// Token usage
     pub usage: i32,
@@ -131,7 +131,7 @@ impl BaseChat {
             api_key: api_info.api_key,
             client: api_info.client,
             character_prompt: character_prompt.to_string(),
-            messages: Vec::new(),
+            messages: None,
             usage: 0,
             need_stream,
         }
@@ -161,7 +161,7 @@ impl BaseChat {
             api_key: api_info.api_key,
             client: api_info.client,
             character_prompt: character_prompt.to_string(),
-            messages: Vec::new(),
+            messages: None,
             usage: 0,
             need_stream,
         }
@@ -175,6 +175,7 @@ impl BaseChat {
     /// * `role` - 消息角色 / Message role
     /// * `content` - 消息内容 / Message content
     pub fn add_message(&mut self, role: Role, content: &str) {
+
         self.messages.push(Message {
             role,
             content: content.to_string(),
@@ -452,95 +453,5 @@ impl BaseChat {
         // Release semaphore permit
         drop(semaphore_permit);
         Ok(result.content)
-    }
-}
-
-/// 聊天角色枚举
-/// Chat role enumeration
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    /// 系统角色
-    /// System role
-    System,
-    /// 用户角色
-    /// User role
-    User,
-    /// 助手角色
-    /// Assistant role
-    Assistant,
-    /// 自定义角色
-    /// Custom character role
-    #[serde(untagged)]
-    Character(String),
-}
-
-impl From<&str> for Role {
-    /// 从字符串创建角色
-    ///
-    /// Create role from string
-    ///
-    /// # 参数 / Parameters
-    /// * `s` - 角色字符串 / Role string
-    ///
-    /// # 返回 / Returns
-    /// * `Self` - 角色枚举 / Role enum
-    fn from(s: &str) -> Self {
-        match s {
-            "system" => Self::System,
-            "user" => Self::User,
-            "assistant" => Self::Assistant,
-            other => Self::Character(other.to_string()), // 自定义角色转换 / Custom role conversion
-        }
-    }
-}
-
-/// 消息结构体
-/// Message structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    /// 消息角色
-    /// Message role
-    pub role: Role,
-    /// 消息内容
-    /// Message content
-    pub content: String,
-}
-
-impl Message {
-    /// 将消息转换为 API 格式
-    ///
-    /// Convert message to API format
-    ///
-    /// # 参数 / Parameters
-    /// * `current_speaker` - 当前发言者角色 / Current speaker role
-    ///
-    /// # 返回 / Returns
-    /// * `HashMap<String, String>` - API 格式的消息 / Message in API format
-    pub fn to_api_format(&self, current_speaker: &Role) -> HashMap<String, String> {
-        let (role_str, content) = match &self.role {
-            Role::System => ("system", self.content.clone()),
-            Role::User => ("user", self.content.clone()),
-            Role::Assistant => ("assistant", self.content.clone()),
-            Role::Character(c) => {
-                // 判断是否是当前发言者
-                // Check if it's the current speaker
-                if self.role == *current_speaker {
-                    // 是发言者：作为 assistant 输出
-                    // Is the speaker: output as assistant
-                    ("assistant", self.content.clone())
-                } else {
-                    // 非发言者：添加前缀并作为 user 输出
-                    // Not the speaker: add prefix and output as user
-                    let prefixed_content = format!("{} said: {}", c, self.content);
-                    ("user", prefixed_content)
-                }
-            }
-        };
-
-        HashMap::from([
-            ("role".to_string(), role_str.to_string()),
-            ("content".to_string(), content),
-        ])
     }
 }

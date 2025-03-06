@@ -242,6 +242,8 @@ impl SingleChat {
         let function_call: serde_json::Value = ChatTool::get_function(&text_call, json!({"tools": tools_schema}))
             .await
             .change_context(ToolCallError::ParseFunctionCall)?;
+        info!("function_call: {}", serde_json::to_string_pretty(&function_call).unwrap());
+
 
         // 提取调用参数
         // Extract call parameters
@@ -310,6 +312,7 @@ impl SingleChat {
         // 提取原始函数调用文本
         // Extract original function call texts
         let text_calls = extract_tool_uses(&answer_with_text_calls);
+        info!("text_calls: {:?}", text_calls);
 
         // 预分配结果向量
         // Pre-allocate result vector
@@ -318,6 +321,7 @@ impl SingleChat {
         if text_calls.is_empty() {
             // 如果没有函数调用，直接返回原始回答
             // If there are no function calls, return the original answer
+            info!("No function calls found, returning original answer");
             return Ok((answer_with_text_calls, results));
         }
 
@@ -328,6 +332,7 @@ impl SingleChat {
             .fold(answer_with_text_calls, |acc, call| {
                 acc.replace(&format!("<ToolUse>{}</ToolUse>", call), "")
             });
+        info!("clean_answer: {}", clean_answer);
 
         // 创建工具模式的副本用于任务间共享
         // Create a copy of the tool schema for sharing between tasks
