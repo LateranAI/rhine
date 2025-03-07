@@ -14,8 +14,9 @@ use tokio::task;
 use tracing::log::{info};
 
 // 本地库引用 / Local library imports
-use crate::chat::chat_base::{BaseChat, ChatError, Role};
+use crate::chat::chat_base::{BaseChat, ChatError};
 use crate::chat::chat_tool::{ChatTool};
+use crate::chat::message::Role;
 use crate::config::ModelCapability;
 use crate::prompt::assembler::{assemble_output_description, assemble_tools_prompt};
 use crate::schema::json_schema::JsonSchema;
@@ -138,11 +139,11 @@ impl SingleChat {
     ///
     /// # 返回 / Returns
     /// * `Result<String, ChatError>` - 回答结果 / Answer result
-    pub async fn get_answer(&mut self, user_input: &str) -> Result<String, ChatError> {
+    pub async fn get_answer_with_end_path(&mut self, end_path: &[usize], user_input: &str) -> Result<String, ChatError> {
         // 添加用户消息
         // Add user message
         self.base.add_message(Role::User, user_input);
-        let request_body = self.base.build_request_body();
+        let request_body = self.base.build_request_body(end_path, &Role::User);
 
         let content = if self.need_stream {
             // 使用流式响应
@@ -167,6 +168,13 @@ impl SingleChat {
         // Add assistant message
         self.base.add_message(Role::Assistant, &content);
         Ok(content)
+    }
+
+    pub async fn get_answer(&mut self, user_input: &str) -> Result<String, ChatError> {
+        let end_path = self.base.message_path.clone();
+        // 获取回答
+        // Get answer
+        self.get_answer_with_end_path(end_path.as_ref(), user_input).await
     }
 
     /// 获取结构化 JSON 格式的回答
@@ -302,7 +310,9 @@ impl SingleChat {
     ) -> Result<(String, Vec<String>), ToolCallError> {
         // 获取包含函数调用的回答
         // Get answer with function calls
-        let answer_with_text_calls = self.get_answer(user_input).await.map_err(|e| {
+        let answer_with_text_calls = self.get_answer(
+            user_input,
+        ).await.map_err(|e| {
             Report::new(ToolCallError::ExtractFunctionCall(format!(
                 "Failed to get answer: {:?}",
                 e

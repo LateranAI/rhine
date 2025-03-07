@@ -6,7 +6,8 @@ use serde::de::DeserializeOwned;
 use tracing::log::info;
 
 // 项目内部模块
-use crate::chat::chat_base::{BaseChat, ChatError, Role};
+use crate::chat::chat_base::{BaseChat, ChatError};
+use crate::chat::message::Role;
 use crate::config::ModelCapability::ToolUse;
 use crate::schema::json_schema::JsonSchema;
 
@@ -45,7 +46,10 @@ impl ChatTool {
 
         // 构建包含响应格式的请求体
         // Build request body with response format
-        let request_body = add_response_format(base.build_request_body(), json_schema);
+        let request_body = add_response_format(
+            base.build_request_body(base.message_path.as_ref(), &Role::User),
+            json_schema
+        );
 
         // 发送请求并处理可能的错误
         // Send request and handle potential errors
@@ -106,7 +110,10 @@ impl ChatTool {
 
         // 构建包含工具的请求体
         // Build request body with tools
-        let request_body = add_tools(base.build_request_body(), tools_schema);
+        let request_body = add_tools(base.build_request_body(
+            base.message_path.as_ref(),
+            &Role::User,
+        ), tools_schema);
 
         // 发送请求并处理可能的错误
         // Send request and handle potential errors

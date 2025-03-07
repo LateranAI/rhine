@@ -8,16 +8,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 // 错误处理 / Error handling
-use thiserror::Error;
 use error_stack::{Report, Result, ResultExt};
+use thiserror::Error;
 
 // 异步运行时和流处理 / Async runtime and stream processing
 use futures::{Stream, TryStreamExt};
 use tokio::sync::OwnedSemaphorePermit;
 
 // 网络请求 / Network requests
-use reqwest::{Client, Error, Response};
 use crate::chat::message::{Messages, Role};
+use reqwest::{Client, Error, Response};
 // 本地库引用 / Local library imports
 use crate::config::{Config, ModelCapability, THREAD_POOL};
 
@@ -99,6 +99,9 @@ pub struct BaseChat {
     /// 角色提示词
     /// Character prompt
     pub character_prompt: String,
+    /// 消息路径
+    /// Message Path
+    pub message_path: Vec<usize>,
     /// 消息树
     /// Message Tree
     pub messages: Option<Messages>,
@@ -131,6 +134,7 @@ impl BaseChat {
             api_key: api_info.api_key,
             client: api_info.client,
             character_prompt: character_prompt.to_string(),
+            message_path: vec![],
             messages: None,
             usage: 0,
             need_stream,
@@ -161,6 +165,7 @@ impl BaseChat {
             api_key: api_info.api_key,
             client: api_info.client,
             character_prompt: character_prompt.to_string(),
+            message_path: vec![],
             messages: None,
             usage: 0,
             need_stream,
@@ -175,33 +180,11 @@ impl BaseChat {
     /// * `role` - 消息角色 / Message role
     /// * `content` - 消息内容 / Message content
     pub fn add_message(&mut self, role: Role, content: &str) {
-
-        self.messages.push(Message {
-            role,
-            content: content.to_string(),
-        });
-    }
-
-    /// 构建 API 所需的消息格式
-    ///
-    /// Build messages in the format required by the API
-    ///
-    /// # 返回 / Returns
-    /// * `Vec<HashMap<String, String>>` - 格式化后的消息列表 / Formatted message list
-    pub fn build_messages(&self) -> Vec<HashMap<String, String>> {
-        let mut messages = vec![HashMap::from([
-            ("role".to_owned(), "system".to_owned()),
-            ("content".to_owned(), self.character_prompt.clone()),
-        ])];
-
-        messages.extend(
-            self.messages
-                .iter()
-                .map(|m| m.to_api_format(&m.role))
-                .collect::<Vec<_>>(),
-        );
-
-        messages
+        if let Some(messages) = &mut self.messages {
+            messages
+                .add(self.message_path.as_ref(), role, content.to_string())
+                .unwrap()
+        }
     }
 
     /// 构建请求体
@@ -210,8 +193,19 @@ impl BaseChat {
     ///
     /// # 返回 / Returns
     /// * `serde_json::Value` - JSON 格式的请求体 / Request body in JSON format
-    pub fn build_request_body(&self) -> serde_json::Value {
-        let messages = self.build_messages();
+    pub fn build_request_body(
+        &self,
+        end_path: &[usize],
+        current_speaker: &Role,
+    ) -> serde_json::Value {
+        let Some(messages) = self.messages.as_ref() else {
+            return json!({
+                "model": self.model,
+                "messages": [],
+                "stream": self.need_stream,
+            });
+        };
+        let messages = messages.assemble_context([].as_ref(), end_path, current_speaker);
 
         json!({
             "model": self.model,
@@ -323,17 +317,16 @@ impl BaseChat {
     /// # 返回 / Returns
     /// * `Result<String, ChatError>` - 提取的内容 / Extracted content
     pub fn get_content_from_resp(resp: &serde_json::Value) -> Result<String, ChatError> {
-        let content = resp.get("choices")
+        let content = resp
+            .get("choices")
             .and_then(|c| c.get(0))
             .and_then(|c| c.get("message"))
             .and_then(|m| m.get("content"));
 
         match content {
             Some(content) => Ok(content.to_string()),
-            None => {
-                Err(Report::new(ChatError::ParseResponseError))
-                    .attach_printable("Failed to parse response content")
-            }
+            None => Err(Report::new(ChatError::ParseResponseError))
+                .attach_printable("Failed to parse response content"),
         }
     }
 
@@ -350,7 +343,13 @@ impl BaseChat {
     pub async fn get_stream_response(
         &mut self,
         request_body: serde_json::Value,
-    ) -> Result<(impl Stream<Item=reqwest::Result<Bytes>> + Send + Unpin, OwnedSemaphorePermit), ChatError> {
+    ) -> Result<
+        (
+            impl Stream<Item = reqwest::Result<Bytes>> + Send + Unpin,
+            OwnedSemaphorePermit,
+        ),
+        ChatError,
+    > {
         // 获取信号量许可
         // Acquire semaphore permit
         let semaphore_permit = THREAD_POOL
@@ -411,8 +410,10 @@ impl BaseChat {
         }
 
         let result = stream
-            .map_err(|err| Report::new(ChatError::HttpError(0))
-                .attach_printable(format!("Failed to get response: {}", err)))
+            .map_err(|err| {
+                Report::new(ChatError::HttpError(0))
+                    .attach_printable(format!("Failed to get response: {}", err))
+            })
             .try_fold(StreamResult::default(), |mut result, chunk| async move {
                 String::from_utf8_lossy(&chunk)
                     .split('\n')
@@ -423,17 +424,22 @@ impl BaseChat {
                         let json_str = line.strip_prefix("data: ").unwrap_or(line);
 
                         serde_json::from_str::<serde_json::Value>(json_str)
-                            .map_err(|err| Report::new(ChatError::ParseResponseError)
-                                .attach_printable(format!("Failed to parse JSON: {}", err)))
+                            .map_err(|err| {
+                                Report::new(ChatError::ParseResponseError)
+                                    .attach_printable(format!("Failed to parse JSON: {}", err))
+                            })
                             .map(|json| {
                                 // 提取内容
                                 // Extract content
                                 json.get("choices")
                                     .and_then(|c| c.as_array())
                                     .map(|choices| {
-                                        choices.iter()
+                                        choices
+                                            .iter()
                                             .filter_map(|choice| choice.get("delta"))
-                                            .filter_map(|delta| delta.get("content").and_then(|c| c.as_str()))
+                                            .filter_map(|delta| {
+                                                delta.get("content").and_then(|c| c.as_str())
+                                            })
                                             .for_each(|content| result.content.push_str(content));
                                     });
 

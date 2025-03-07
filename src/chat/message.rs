@@ -134,15 +134,16 @@ impl Messages {
     /// * `path_to_end` - 终端节点路径 / Path to the terminal node
     ///
     /// # 返回 / Returns
-    /// * `Option<Messages>` - 终端节点，如果路径无效则返回None / Terminal node, returns None if path is invalid
-    pub fn get_end_child(&self, path_to_end: &[usize]) -> Option<Messages> {
-        self.get_node_by_path(path_to_end).cloned()
+    /// * `Option<&Messages>` - 终端节点，如果路径无效则返回None / Terminal node, returns None if path is invalid
+    pub fn get_end_child(&self, path_to_end: &[usize]) -> Option<&Messages> {
+        self.get_node_by_path(path_to_end)
     }
 
     /// 获取从自身开始到指定路径的所有子节点
     ///
     /// Get all child nodes from self to the specified path
     ///
+    /// # 参数 / Parameters
     /// # 参数 / Parameters
     /// * `path_to_end` - 终端节点路径 / Path to the terminal node
     ///
@@ -386,11 +387,11 @@ impl Messages {
     ) -> Vec<HashMap<String, String>> {
         let mut history = Vec::new();
 
-        // 找到最近的共同祖先
+        // 找到最近的共同祖节点
         // Find the nearest common ancestor
         let common_prefix_len = start_path.iter()
             .zip(end_path.iter())
-            .take_while(|(&a, &b)| a == b)
+            .take_while(|&(&a, &b)| a == b)
             .count();
 
         let common_ancestor_path = &start_path[0..common_prefix_len];
