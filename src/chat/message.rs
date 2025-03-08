@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::info;
 
 /// 聊天角色枚举
 /// Chat role enumeration
@@ -114,7 +115,7 @@ impl Messages {
     ///
     /// # 返回 / Returns
     /// * `Option<&mut Messages>` - 可变节点引用，如果路径无效则返回None / Mutable node reference, returns None if path is invalid
-    pub fn get_node_by_path_mut(&mut self, path: &[usize]) -> Option<&mut Messages> {
+    pub fn get_node_by_path_mut(&mut self, path: &[usize]) -> Option<&mut Self> {
         if path.is_empty() {
             return Some(self);
         }
@@ -250,7 +251,7 @@ impl Messages {
 
         // 添加到父节点的子列表
         // Add to parent's child list
-        parent.child.push(new_message);
+        parent.child.push(new_message.clone());
 
         Ok(())
     }

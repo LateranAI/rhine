@@ -18,6 +18,7 @@ use tokio::sync::OwnedSemaphorePermit;
 // 网络请求 / Network requests
 use crate::chat::message::{Messages, Role};
 use reqwest::{Client, Error, Response};
+use tracing::info;
 // 本地库引用 / Local library imports
 use crate::config::{Config, ModelCapability, THREAD_POOL};
 
@@ -183,7 +184,9 @@ impl BaseChat {
         if let Some(messages) = &mut self.messages {
             messages
                 .add(self.message_path.as_ref(), role, content.to_string())
-                .unwrap()
+                .unwrap();
+        } else {
+            self.messages = Some(Messages::new(role, content.to_string()))
         }
     }
 
