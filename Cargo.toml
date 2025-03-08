@@ -1,6 +1,6 @@
 [package]
 name = "rhine"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "code core of Rhine Lab"
 license = "GPL-3.0-or-later"
