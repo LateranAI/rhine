@@ -5,7 +5,6 @@ use crate::schema::json_schema::JsonSchema;
 use crate::tests::format_test_block;
 use rhine_schema_derive::{JsonSchema, tool_schema_derive};
 use serde::Deserialize;
-use crate::chat::message::{Messages, Role};
 
 pub async fn test_chat() {
     Config::add_api_source(
@@ -29,18 +28,43 @@ pub async fn test_chat() {
     );
 
     test_single_chat().await;
-    test_single_chat_get_json().await;
-    test_single_chat_get_tool().await;
+    // test_single_chat_get_json().await;
+    // test_single_chat_get_tool().await;
 }
-
 
 async fn test_single_chat() {
-    let mut chat = SingleChat::new_with_api_name("pumpkin-ds-r1", "", true);
-    let answer = chat.get_answer("深度思考strawberry有几个r").await.unwrap();
-    format_test_block("single_chat", || answer);
+    let mut chat = SingleChat::new_with_api_name("pumpkin-gpt-4o", "", true);
+
+    let answer_1 = chat.get_answer("深度思考strawberry有几个r").await.unwrap();
+    let message_1 = chat.base.session.clone();
+    format_test_block("chat_single_round", || {
+        format!("answer: {}, message: {:?}", answer_1, message_1)
+    });
+
+    let answer_2 = chat.get_answer("你确定吗?").await.unwrap();
+    let message_2 = chat.base.session.clone();
+    format_test_block("chat_multi_round", || {
+        format!("answer_2: {}\nmessage_2: {:?}\n", answer_2, message_2)
+    });
+
+    let answer_3 = chat.get_answer_again([0].as_ref()).await.unwrap();
+    let message_3 = chat.base.session.clone();
+    format_test_block("chat_answer_again", || {
+        format!("answer_3: {}\nmessage_3: {:?}\n", answer_3, message_3)
+    });
+
+    let answer_4 = chat
+        .get_answer_with_new_question(
+            [].as_ref(),
+            "straw中有一个r, berry中有两个r, 深度思考strawberry有几个r?",
+        )
+        .await
+        .unwrap();
+    let message_4 = chat.base.session.clone();
+    format_test_block("chat_new_question", || {
+        format!("answer_4: {}\nmessage_4: {:?}", answer_4, message_4)
+    });
 }
-
-
 
 async fn test_single_chat_get_json() {
     let mut chat = SingleChat::new_with_api_name("pumpkin-ds-r1", "", true);

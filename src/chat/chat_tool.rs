@@ -42,12 +42,12 @@ impl ChatTool {
 
         // 添加用户消息
         // Add user message
-        base.add_message(Role::User, text_answer);
+        base.add_message(Role::User, text_answer)?;
 
         // 构建包含响应格式的请求体
         // Build request body with response format
         let request_body = add_response_format(
-            base.build_request_body(base.message_path.as_ref(), &Role::User),
+            base.build_request_body(&base.session.default_path.clone(), &Role::User)?,
             json_schema
         );
 
@@ -71,7 +71,7 @@ impl ChatTool {
 
         // 添加助手回复
         // Add assistant reply
-        base.add_message(Role::Assistant, json_answer);
+        base.add_message(Role::Assistant, json_answer)?;
 
         // 将JSON字符串反序列化为目标类型
         // Deserialize JSON string to target type
@@ -106,14 +106,14 @@ impl ChatTool {
 
         // 添加用户消息
         // Add user message
-        base.add_message(Role::User, text_answer);
+        base.add_message(Role::User, text_answer)?;
 
         // 构建包含工具的请求体
         // Build request body with tools
         let request_body = add_tools(base.build_request_body(
-            base.message_path.as_ref(),
+            &base.session.default_path.clone(),
             &Role::User,
-        ), tools_schema);
+        )?, tools_schema);
 
         // 发送请求并处理可能的错误
         // Send request and handle potential errors

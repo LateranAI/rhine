@@ -4,98 +4,61 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 // 错误处理 / Error handling
-use thiserror::Error;
 use error_stack::{Report, Result, ResultExt};
+use thiserror::Error;
 
 // 异步运行时和流处理 / Async runtime and stream processing
 use tokio::task;
 
 // 日志记录 / Logging
-use tracing::log::{info};
+use tracing::log::info;
 
 // 本地库引用 / Local library imports
 use crate::chat::chat_base::{BaseChat, ChatError};
-use crate::chat::chat_tool::{ChatTool};
+use crate::chat::chat_tool::ChatTool;
 use crate::chat::message::Role;
 use crate::config::ModelCapability;
 use crate::prompt::assembler::{assemble_output_description, assemble_tools_prompt};
 use crate::schema::json_schema::JsonSchema;
 use crate::schema::tool_schema::extract_tool_uses;
 
-
-/// 工具调用错误枚举
-/// Tool call error enumeration
 #[derive(Debug, Error)]
 pub enum ToolCallError {
-    /// 解析函数调用失败
-    /// Failed to parse function call
     #[error("Failed to parse function call")]
     ParseFunctionCall,
-    
-    /// 函数未找到
-    /// Function not found
+
     #[error("Function '{0}' not found")]
     FunctionNotFound(String),
-    
-    /// 函数执行失败
-    /// Failed to execute function
+
     #[error("Failed to execute function '{0}'")]
     FunctionExecution(String),
-    
-    /// 序列化结果失败
-    /// Failed to serialize result
+
     #[error("Failed to serialize function result")]
     SerializeResult,
-    
-    /// 反序列化参数失败
-    /// Failed to deserialize arguments
+
     #[error("Failed to deserialize arguments: {0}")]
     DeserializeArguments(String),
-    
-    /// 获取 JSON 失败
-    /// Failed to get JSON
+
     #[error("Failed to get json: {0}")]
     GetJson(String),
-    
-    /// 从响应中提取函数调用失败
-    /// Failed to extract function call from response
+
     #[error("Failed to extract function call from: {0}")]
     ExtractFunctionCall(String),
-    
-    /// 缺少字段
-    /// Missing field
+
     #[error("Missing field: {0}")]
     MissingField(String),
 }
 
-
-/// 单聊天会话结构体，扩展基础聊天功能，支持工具调用
-/// Single chat session structure, extends basic chat functionality with tool calling support
 #[derive(Debug, Clone)]
 pub struct SingleChat {
-    /// 基础聊天实例
-    /// Base chat instance
     pub base: BaseChat,
-    /// 是否需要流式响应
-    /// Whether streaming response is needed
+
     need_stream: bool,
-    /// 工具模式配置
-    /// Tool schema configuration
+
     tools_schema: Vec<serde_json::Value>,
 }
 
 impl SingleChat {
-    /// 使用 API 名称创建新的单聊天会话
-    /// 
-    /// Create a new single chat session with API name
-    ///
-    /// # 参数 / Parameters
-    /// * `api_name` - API 名称 / API name
-    /// * `character_prompt` - 角色提示词 / Character prompt
-    /// * `need_stream` - 是否需要流式响应 / Whether streaming response is needed
-    ///
-    /// # 返回 / Returns
-    /// * `Self` - 新创建的 SingleChat 实例 / Newly created SingleChat instance
     pub fn new_with_api_name(api_name: &str, character_prompt: &str, need_stream: bool) -> Self {
         let base = BaseChat::new_with_api_name(api_name, character_prompt, need_stream);
         Self {
@@ -105,17 +68,6 @@ impl SingleChat {
         }
     }
 
-    /// 使用模型能力创建新的单聊天会话
-    /// 
-    /// Create a new single chat session with model capability
-    ///
-    /// # 参数 / Parameters
-    /// * `model_capability` - 模型能力枚举 / Model capability enum
-    /// * `character_prompt` - 角色提示词 / Character prompt
-    /// * `need_stream` - 是否需要流式响应 / Whether streaming response is needed
-    ///
-    /// # 返回 / Returns
-    /// * `Self` - 新创建的 SingleChat 实例 / Newly created SingleChat instance
     pub fn new_with_model_capability(
         model_capability: ModelCapability,
         character_prompt: &str,
@@ -130,16 +82,10 @@ impl SingleChat {
         }
     }
 
-    /// 处理请求并获取响应内容
-    ///
-    /// Process request and get response content
-    ///
-    /// # 参数 / Parameters
-    /// * `request_body` - 请求体 / Request body
-    ///
-    /// # 返回 / Returns
-    /// * `Result<String, ChatError>` - 响应内容或错误 / Response content or error
-    async fn process_request(&mut self, request_body: serde_json::Value) -> Result<String, ChatError> {
+    async fn process_request(
+        &mut self,
+        request_body: serde_json::Value,
+    ) -> Result<String, ChatError> {
         let content = if self.need_stream {
             // 使用流式响应
             // Use streaming response
@@ -168,67 +114,38 @@ impl SingleChat {
         info!("GetLLMAPIAnswer: {}", content);
         // 添加助手消息
         // Add assistant message
-        self.base.add_message(Role::Assistant, &content);
+        self.base.add_message(Role::Assistant, &content)?;
         Ok(content)
     }
 
-    /// 使用指定消息路径获取用户输入的回答
-    ///
-    /// Get answer for user input with a specific message path
-    ///
-    /// # 参数 / Parameters
-    /// * `end_path` - 消息路径 / Message path
-    /// * `user_input` - 用户输入 / User input
-    ///
-    /// # 返回 / Returns
-    /// * `Result<String, ChatError>` - 回答结果 / Answer result
-    pub async fn get_answer_with_end_path(&mut self, end_path: &[usize], user_input: &str) -> Result<String, ChatError> {
-        // 添加用户消息
-        // Add user message
-        self.base.add_message(Role::User, user_input);
-        let request_body = self.base.build_request_body(end_path, &Role::User);
+    pub async fn get_answer_with_new_question(
+        &mut self,
+        parent_path: &[usize],
+        user_input: &str,
+    ) -> Result<String, ChatError> {
+        self.base.add_message_with_parent_path(parent_path, Role::User, user_input)?;
+        let request_body = self
+            .base
+            .build_request_body(&self.base.session.default_path.clone(), &Role::User)?;
         self.process_request(request_body).await
     }
 
-    /// 使用当前消息路径重新获取回答（不添加新的用户消息）
-    ///
-    /// Get answer again using current message path (without adding new user message)
-    ///
-    /// # 参数 / Parameters
-    /// * `end_path` - 消息路径 / Message path
-    ///
-    /// # 返回 / Returns
-    /// * `Result<String, ChatError>` - 回答结果 / Answer result
     pub async fn get_answer_again(&mut self, end_path: &[usize]) -> Result<String, ChatError> {
-        let request_body = self.base.build_request_body(end_path, &Role::User);
+        let request_body = self
+            .base
+            .build_request_body(end_path, &Role::User)?;
         self.process_request(request_body).await
     }
 
-    /// 获取用户输入的回答（使用当前消息路径）
-    ///
-    /// Get answer for user input using current message path
-    ///
-    /// # 参数 / Parameters
-    /// * `user_input` - 用户输入 / User input
-    ///
-    /// # 返回 / Returns
-    /// * `Result<String, ChatError>` - 回答结果 / Answer result
     pub async fn get_answer(&mut self, user_input: &str) -> Result<String, ChatError> {
-        let end_path = self.base.message_path.clone();
-        // 使用当前消息路径获取回答
-        // Get answer with current message path
-        self.get_answer_with_end_path(end_path.as_ref(), user_input).await
+        info!("path: {:?}", self.base.session.default_path.clone());
+        self.get_answer_with_new_question(
+            &self.base.session.default_path.clone(),
+            user_input,
+        )
+        .await
     }
 
-    /// 获取结构化 JSON 格式的回答
-    ///
-    /// Get structured JSON answer
-    ///
-    /// # 参数 / Parameters
-    /// * `user_input` - 用户输入 / User input
-    ///
-    /// # 返回 / Returns
-    /// * `Result<T, ChatError>` - 结构化回答结果 / Structured answer result
     pub async fn get_json_answer<T: DeserializeOwned + 'static + JsonSchema>(
         &mut self,
         user_input: &str,
@@ -241,14 +158,19 @@ impl SingleChat {
         // Add output description system message
         let output_description = assemble_output_description(schema.clone())
             .change_context(ChatError::AssembleOutputDescriptionError)
-            .attach_printable(format!("Failed to assemble output description for schema: {:?}",
-                serde_json::to_string(&schema).unwrap_or_else(|_| "Schema serialization failed".to_string())))?;
+            .attach_printable(format!(
+                "Failed to assemble output description for schema: {:?}",
+                serde_json::to_string(&schema)
+                    .unwrap_or_else(|_| "Schema serialization failed".to_string())
+            ))?;
 
-        self.base.add_message(Role::System, output_description.as_str());
+        self.base
+            .add_message(Role::System, output_description.as_str())?;
 
         // 获取回答
         // Get answer
-        let answer = self.get_answer(user_input)
+        let answer = self
+            .get_answer(user_input)
             .await
             .attach_printable("Failed to get answer for JSON request")?;
 
@@ -259,13 +181,7 @@ impl SingleChat {
             .attach_printable(format!("Failed to parse answer as JSON: {}", answer))
     }
 
-    /// 设置工具模式
-    ///
-    /// Set tool schema
-    ///
-    /// # 参数 / Parameters
-    /// * `tools_schema` - 工具模式配置 / Tool schema configuration
-    pub fn set_tools(&mut self, tools_schema: Vec<serde_json::Value>) {
+    pub fn set_tools(&mut self, tools_schema: Vec<serde_json::Value>) -> Result<(), ChatError> {
         self.tools_schema = tools_schema.clone();
 
         // 组装工具提示
@@ -274,46 +190,55 @@ impl SingleChat {
 
         // 添加工具提示系统消息
         // Add tools prompt system message
-        self.base.add_message(Role::System, &tools_prompt);
+        self.base.add_message(Role::System, &tools_prompt)
     }
 
-    /// 处理单个工具调用
-    ///
-    /// Process a single tool call
-    ///
-    /// # 参数 / Parameters
-    /// * `text_call` - 函数调用文本 / Function call text
-    /// * `tools_schema` - 工具模式配置 / Tool schema configuration
-    ///
-    /// # 返回 / Returns
-    /// * `Result<String, Report<ToolCallError>>` - 处理结果 / Processing result
     async fn process_tool_call(
         text_call: String,
-        tools_schema: Vec<serde_json::Value>
+        tools_schema: Vec<serde_json::Value>,
     ) -> error_stack::Result<String, ToolCallError> {
         // 解析函数调用
         // Parse function call
-        let function_call: serde_json::Value = ChatTool::get_function(&text_call, json!({"tools": tools_schema}))
-            .await
-            .change_context(ToolCallError::ParseFunctionCall)
-            .attach_printable(format!("Failed to parse function call from text: {}", text_call))?;
+        let function_call: serde_json::Value =
+            ChatTool::get_function(&text_call, json!({"tools": tools_schema}))
+                .await
+                .change_context(ToolCallError::ParseFunctionCall)
+                .attach_printable(format!(
+                    "Failed to parse function call from text: {}",
+                    text_call
+                ))?;
 
-        info!("function_call: {}", serde_json::to_string_pretty(&function_call).unwrap_or_default());
+        info!(
+            "function_call: {}",
+            serde_json::to_string_pretty(&function_call).unwrap_or_default()
+        );
 
         // 提取调用参数
         // Extract call parameters
-        let function_name = function_call["name"].as_str()
-            .ok_or_else(|| Report::new(ToolCallError::MissingField("name".to_string()))
-            .attach_printable(format!("Function call missing 'name' field: {}",
-                serde_json::to_string(&function_call).unwrap_or_default())))?;
+        let function_name = function_call["name"].as_str().ok_or_else(|| {
+            Report::new(ToolCallError::MissingField("name".to_string())).attach_printable(format!(
+                "Function call missing 'name' field: {}",
+                serde_json::to_string(&function_call).unwrap_or_default()
+            ))
+        })?;
 
-        let arg_str = function_call["arguments"].as_str()
-            .ok_or_else(|| Report::new(ToolCallError::MissingField("arguments".to_string()))
-            .attach_printable(format!("Function call missing 'arguments' field for function: {}", function_name)))?;
+        let arg_str = function_call["arguments"].as_str().ok_or_else(|| {
+            Report::new(ToolCallError::MissingField("arguments".to_string())).attach_printable(
+                format!(
+                    "Function call missing 'arguments' field for function: {}",
+                    function_name
+                ),
+            )
+        })?;
 
-        let arg_json: serde_json::Value = serde_json::from_str(arg_str)
-            .map_err(|e| Report::new(ToolCallError::DeserializeArguments(e.to_string()))
-            .attach_printable(format!("Failed to deserialize arguments for function '{}': {}", function_name, arg_str)))?;
+        let arg_json: serde_json::Value = serde_json::from_str(arg_str).map_err(|e| {
+            Report::new(ToolCallError::DeserializeArguments(e.to_string())).attach_printable(
+                format!(
+                    "Failed to deserialize arguments for function '{}': {}",
+                    function_name, arg_str
+                ),
+            )
+        })?;
 
         // 调用函数
         // Call function
@@ -325,9 +250,12 @@ impl SingleChat {
                 info!("Calling function named: {}", function_name);
                 match tool_fn(arg_json.clone()) {
                     Ok(result) => {
-                        let serialized = serde_json::to_string_pretty(&result)
-                            .map_err(|e| Report::new(ToolCallError::SerializeResult)
-                            .attach_printable(format!("Failed to serialize result for function '{}': {:?}", function_name, e)))?;
+                        let serialized = serde_json::to_string_pretty(&result).map_err(|e| {
+                            Report::new(ToolCallError::SerializeResult).attach_printable(format!(
+                                "Failed to serialize result for function '{}': {:?}",
+                                function_name, e
+                            ))
+                        })?;
 
                         info!("Calling function succeeded: {}", serialized);
                         Ok(serialized)
@@ -336,7 +264,7 @@ impl SingleChat {
                         let err_msg = format!("Calling function '{}' failed: {}", function_name, e);
                         info!("{}", err_msg);
                         Ok(err_msg) // 返回错误信息作为可处理的结果而不是抛出异常
-                                     // Return error message as processable result instead of throwing exception
+                        // Return error message as processable result instead of throwing exception
                     }
                 }
             }
@@ -344,29 +272,18 @@ impl SingleChat {
                 let err_msg = format!("Cannot find function named '{}'", function_name);
                 info!("{}", err_msg);
                 Ok(err_msg) // 同样，返回错误信息而不是抛出异常
-                             // Similarly, return error message instead of throwing exception
+                // Similarly, return error message instead of throwing exception
             }
         }
     }
 
-    /// 获取工具调用回答
-    ///
-    /// Get tool call answer
-    ///
-    /// # 参数 / Parameters
-    /// * `user_input` - 用户输入 / User input
-    ///
-    /// # 返回 / Returns
-    /// * `Result<(String, Vec<String>), ToolCallError>` - 清理后的回答和工具调用结果 / Cleaned answer and tool call results
     pub async fn get_tool_answer(
         &mut self,
         user_input: &str,
     ) -> Result<(String, Vec<String>), ToolCallError> {
         // 获取包含函数调用的回答
         // Get answer with function calls
-        let answer_with_text_calls = self.get_answer(
-            user_input,
-        ).await.map_err(|e| {
+        let answer_with_text_calls = self.get_answer(user_input).await.map_err(|e| {
             Report::new(ToolCallError::ExtractFunctionCall(format!(
                 "Failed to get answer for tool call: {:?}",
                 e
@@ -405,12 +322,15 @@ impl SingleChat {
 
         // 创建任务，并行处理所有工具调用
         // Create tasks to process all tool calls in parallel
-        let tasks = text_calls.into_iter().map(|text_call| {
-            let tools_schema_clone = tools_schema.clone();
-            task::spawn(async move {
-                Self::process_tool_call(text_call, tools_schema_clone).await
+        let tasks = text_calls
+            .into_iter()
+            .map(|text_call| {
+                let tools_schema_clone = tools_schema.clone();
+                task::spawn(
+                    async move { Self::process_tool_call(text_call, tools_schema_clone).await },
+                )
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         // 收集任务执行过程中的错误
         // Collect errors during task execution
@@ -429,10 +349,13 @@ impl SingleChat {
                             errors.push(format!("Tool call #{} failed: {}", i, err));
                             // 添加错误占位符到结果中
                             // Add error placeholder to results
-                            results.push(format!("{{\"error\": \"Tool call failed with error: {}\"}}", err));
+                            results.push(format!(
+                                "{{\"error\": \"Tool call failed with error: {}\"}}",
+                                err
+                            ));
                         }
                     }
-                },
+                }
                 Err(e) => {
                     // 收集任务执行错误但继续处理其他调用
                     // Collect task execution error but continue processing other calls
@@ -440,7 +363,10 @@ impl SingleChat {
                     errors.push(error_msg.clone());
                     // 添加错误占位符到结果中
                     // Add error placeholder to results
-                    results.push(format!("{{\"error\": \"Task execution failed: {}\"}}", error_msg));
+                    results.push(format!(
+                        "{{\"error\": \"Task execution failed: {}\"}}",
+                        error_msg
+                    ));
                 }
             }
         }
