@@ -9,7 +9,6 @@ use thiserror::Error;
 
 // 异步运行时和流处理 / Async runtime and stream processing
 use tokio::task;
-
 // 日志记录 / Logging
 use tracing::log::info;
 
@@ -82,7 +81,32 @@ impl SingleChat {
         }
     }
 
-    async fn process_request(
+    pub async fn get_resp_with_new_question(
+        &mut self,
+        parent_path: &[usize],
+        user_input: &str,
+    ) -> Result<serde_json::Value, ChatError> {
+        self.base
+            .add_message_with_parent_path(parent_path, Role::User, user_input)?;
+        Ok(self
+            .base
+            .build_request_body(&self.base.session.default_path.clone(), &Role::User)?)
+    }
+
+    pub async fn get_resp_again(
+        &mut self,
+        end_path: &[usize],
+    ) -> Result<serde_json::Value, ChatError> {
+        Ok(self.base.build_request_body(end_path, &Role::User)?)
+    }
+
+    pub async fn get_resp(&mut self, user_input: &str) -> Result<serde_json::Value, ChatError> {
+        info!("path: {:?}", self.base.session.default_path.clone());
+        self.get_resp_with_new_question(&self.base.session.default_path.clone(), user_input)
+            .await
+    }
+
+    async fn get_content_from_resp(
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<String, ChatError> {
@@ -118,34 +142,6 @@ impl SingleChat {
         Ok(content)
     }
 
-    pub async fn get_answer_with_new_question(
-        &mut self,
-        parent_path: &[usize],
-        user_input: &str,
-    ) -> Result<String, ChatError> {
-        self.base.add_message_with_parent_path(parent_path, Role::User, user_input)?;
-        let request_body = self
-            .base
-            .build_request_body(&self.base.session.default_path.clone(), &Role::User)?;
-        self.process_request(request_body).await
-    }
-
-    pub async fn get_answer_again(&mut self, end_path: &[usize]) -> Result<String, ChatError> {
-        let request_body = self
-            .base
-            .build_request_body(end_path, &Role::User)?;
-        self.process_request(request_body).await
-    }
-
-    pub async fn get_answer(&mut self, user_input: &str) -> Result<String, ChatError> {
-        info!("path: {:?}", self.base.session.default_path.clone());
-        self.get_answer_with_new_question(
-            &self.base.session.default_path.clone(),
-            user_input,
-        )
-        .await
-    }
-
     pub async fn get_json_answer<T: DeserializeOwned + 'static + JsonSchema>(
         &mut self,
         user_input: &str,
@@ -169,10 +165,12 @@ impl SingleChat {
 
         // 获取回答
         // Get answer
-        let answer = self
-            .get_answer(user_input)
+        let resp = self
+            .get_resp(user_input)
             .await
             .attach_printable("Failed to get answer for JSON request")?;
+
+        let answer = self.get_content_from_resp(resp).await?;
 
         // 解析 JSON 回答
         // Parse JSON answer
@@ -283,13 +281,23 @@ impl SingleChat {
     ) -> Result<(String, Vec<String>), ToolCallError> {
         // 获取包含函数调用的回答
         // Get answer with function calls
-        let answer_with_text_calls = self.get_answer(user_input).await.map_err(|e| {
+        let resp_with_text_calls = self.get_resp(user_input).await.map_err(|e| {
             Report::new(ToolCallError::ExtractFunctionCall(format!(
                 "Failed to get answer for tool call: {:?}",
                 e
             )))
             .attach_printable(format!("User input: {}", user_input))
         })?;
+        let answer_with_text_calls = self
+            .get_content_from_resp(resp_with_text_calls)
+            .await
+            .map_err(|e| {
+                Report::new(ToolCallError::ExtractFunctionCall(format!(
+                    "Failed to get answer for tool call: {:?}",
+                    e
+                )))
+                .attach_printable(format!("User input: {}", user_input))
+            })?;
 
         // 提取原始函数调用文本
         // Extract original function call texts
