@@ -35,25 +35,28 @@ pub async fn test_chat() {
 async fn test_single_chat() {
     let mut chat = SingleChat::new_with_api_name("pumpkin-gpt-4o", "", true);
 
-    let answer_1 = chat.get_resp("深度思考strawberry有几个r").await.unwrap();
+    let resp_1 = chat.get_resp("深度思考strawberry有几个r").await.unwrap();
     let message_1 = chat.base.session.clone();
+    let answer_1 = chat.get_content_from_resp(resp_1).await.unwrap();
     format_test_block("chat_single_round", || {
-        format!("answer: {}, message: {:?}", answer_1, message_1)
+        format!("message: {:?}\nanswer: {}", message_1, answer_1)
     });
 
-    let answer_2 = chat.get_resp("你确定吗?").await.unwrap();
+    let resp_2 = chat.get_resp("你确定吗?").await.unwrap();
     let message_2 = chat.base.session.clone();
-    format_test_block("chat_multi_round", || {
-        format!("answer_2: {}\nmessage_2: {:?}\n", answer_2, message_2)
+    let answer_2 = chat.get_content_from_resp(resp_2).await.unwrap();
+    format_test_block("chat_single_round", || {
+        format!("message: {:?}\nanswer: {}", message_2, answer_2)
     });
 
-    let answer_3 = chat.get_resp_again([0].as_ref()).await.unwrap();
+    let resp_3 = chat.get_resp_again([0].as_ref()).await.unwrap();
     let message_3 = chat.base.session.clone();
-    format_test_block("chat_answer_again", || {
-        format!("answer_3: {}\nmessage_3: {:?}\n", answer_3, message_3)
+    let answer_3 = chat.get_content_from_resp(resp_3).await.unwrap();
+    format_test_block("chat_single_round", || {
+        format!("message: {:?}\nanswer: {}", message_3, answer_3)
     });
 
-    let answer_4 = chat
+    let resp_4 = chat
         .get_resp_with_new_question(
             [].as_ref(),
             "straw中有一个r, berry中有两个r, 深度思考strawberry有几个r?",
@@ -61,8 +64,9 @@ async fn test_single_chat() {
         .await
         .unwrap();
     let message_4 = chat.base.session.clone();
-    format_test_block("chat_new_question", || {
-        format!("answer_4: {}\nmessage_4: {:?}", answer_4, message_4)
+    let answer_4 = chat.get_content_from_resp(resp_4).await.unwrap();
+    format_test_block("chat_single_round", || {
+        format!("message: {:?}\nanswer: {}", message_4, answer_4)
     });
 }
 
@@ -84,7 +88,7 @@ async fn test_single_chat_get_tool() {
         .unwrap();
     format_test_block("structured_answer", || {
         format!(
-            "ToolUseResult:\n Answer:{}\nResponse: {:?}",
+            "ToolUseResult:\n Answer: {}\nResponse: {:?}",
             answer.0, answer.1
         )
     });

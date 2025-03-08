@@ -101,7 +101,7 @@ impl SingleChat {
             .await
     }
 
-    async fn get_content_from_resp(
+    pub async fn get_content_from_resp(
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<String, ChatError> {
