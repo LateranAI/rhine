@@ -1,6 +1,27 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use thiserror::Error;
 use tracing::info;
+
+/// 消息错误枚举
+/// Message error enumeration
+#[derive(Debug, Error)]
+pub enum MessageError {
+    /// 无效路径
+    /// Invalid path
+    #[error("Invalid path: {0:?}")]
+    InvalidPath(Vec<usize>),
+
+    /// 无效索引
+    /// Invalid index
+    #[error("Invalid index: {0} at path: {1:?}")]
+    InvalidIndex(usize, Vec<usize>),
+
+    /// 不支持的操作
+    /// Unsupported operation
+    #[error("Unsupported operation: {0}")]
+    UnsupportedOperation(String),
+}
 
 /// 聊天角色枚举
 /// Chat role enumeration
@@ -10,12 +31,15 @@ pub enum Role {
     /// 系统角色
     /// System role
     System,
+
     /// 用户角色
     /// User role
     User,
+
     /// 助手角色
     /// Assistant role
     Assistant,
+
     /// 自定义角色
     /// Custom character role
     #[serde(untagged)]
@@ -42,6 +66,20 @@ impl From<&str> for Role {
     }
 }
 
+impl ToString for Role {
+    /// 将角色转换为字符串
+    ///
+    /// Convert role to string
+    fn to_string(&self) -> String {
+        match self {
+            Self::System => "system".to_string(),
+            Self::User => "user".to_string(),
+            Self::Assistant => "assistant".to_string(),
+            Self::Character(name) => name.clone(),
+        }
+    }
+}
+
 /// 消息结构体
 /// Message structure
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +102,10 @@ pub struct Messages {
 }
 
 impl Messages {
+    //
+    // 基础操作方法 / Basic operations
+    //
+
     /// 创建新的消息
     ///
     /// Create a new message
@@ -75,15 +117,37 @@ impl Messages {
     /// # 返回 / Returns
     /// * `Self` - 新创建的消息 / Newly created message
     pub fn new(role: Role, content: String) -> Self {
-        let path = Vec::new();
-        let child = Vec::new();
+        Self {
+            path: Vec::new(),
+            role,
+            content,
+            child: Vec::new(),
+        }
+    }
+
+    /// 创建带有路径的新消息
+    ///
+    /// Create a new message with path
+    ///
+    /// # 参数 / Parameters
+    /// * `path` - 消息路径 / Message path
+    /// * `role` - 消息角色 / Message role
+    /// * `content` - 消息内容 / Message content
+    ///
+    /// # 返回 / Returns
+    /// * `Self` - 新创建的消息 / Newly created message
+    pub fn new_with_path(path: Vec<usize>, role: Role, content: String) -> Self {
         Self {
             path,
             role,
             content,
-            child,
+            child: Vec::new(),
         }
     }
+
+    //
+    // 节点访问方法 / Node access methods
+    //
 
     /// 通过路径获取节点引用
     ///
@@ -127,6 +191,10 @@ impl Messages {
         self.child[path[0]].get_node_by_path_mut(&path[1..])
     }
 
+    //
+    // 节点集合操作方法 / Node collection methods
+    //
+
     /// 获取指定路径的终端子节点
     ///
     /// Get the terminal child node at the specified path
@@ -136,7 +204,7 @@ impl Messages {
     ///
     /// # 返回 / Returns
     /// * `Option<&Messages>` - 终端节点，如果路径无效则返回None / Terminal node, returns None if path is invalid
-    pub fn get_end_child(&self, path_to_end: &[usize]) -> Option<&Messages> {
+    pub fn get_end_node(&self, path_to_end: &[usize]) -> Option<&Messages> {
         self.get_node_by_path(path_to_end)
     }
 
@@ -144,7 +212,6 @@ impl Messages {
     ///
     /// Get all child nodes from self to the specified path
     ///
-    /// # 参数 / Parameters
     /// # 参数 / Parameters
     /// * `path_to_end` - 终端节点路径 / Path to the terminal node
     ///
@@ -183,7 +250,7 @@ impl Messages {
     ///
     /// # 返回 / Returns
     /// * `Vec<Messages>` - 子节点列表 / List of child nodes
-    pub fn get_children_from_start(&self, path_to_start: &[usize], path_to_end: &[usize]) -> Vec<Messages> {
+    pub fn get_children_between_paths(&self, path_to_start: &[usize], path_to_end: &[usize]) -> Vec<Messages> {
         if let Some(start_node) = self.get_node_by_path(path_to_start) {
             start_node.get_children_from_self(path_to_end)
         } else {
@@ -200,7 +267,7 @@ impl Messages {
     ///
     /// # 返回 / Returns
     /// * `Vec<Messages>` - 节点列表 / List of nodes
-    pub fn get_children_from_root(&self, path_to_end: &[usize]) -> Vec<Messages> {
+    pub fn get_path_from_root(&self, path_to_end: &[usize]) -> Vec<Messages> {
         let mut result = Vec::new();
 
         // 添加根节点
@@ -212,13 +279,13 @@ impl Messages {
         let mut current_path = Vec::new();
 
         for &idx in path_to_end {
-            if idx >= self.child.len() {
-                break;
-            }
-
             current_path.push(idx);
-            if let Some(node) = self.get_node_by_path(&current_path) {
-                result.push(node.clone());
+            if current_path.len() > 0 && idx < self.child.len() {
+                if let Some(node) = self.get_node_by_path(&current_path) {
+                    result.push(node.clone());
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
@@ -226,6 +293,10 @@ impl Messages {
 
         result
     }
+
+    //
+    // 节点修改方法 / Node modification methods
+    //
 
     /// 在指定路径添加新消息
     ///
@@ -237,21 +308,20 @@ impl Messages {
     /// * `content` - 消息内容 / Message content
     ///
     /// # 返回 / Returns
-    /// * `Result<(), String>` - 成功返回Ok，失败返回错误信息 / Returns Ok on success, error message on failure
-    pub fn add(&mut self, path: &[usize], role: Role, content: String) -> Result<(), String> {
+    /// * `Result<(), MessageError>` - 成功返回Ok，失败返回错误 / Returns Ok on success, error on failure
+    pub fn add(&mut self, path: &[usize], role: Role, content: String) -> Result<(), MessageError> {
         let parent = self.get_node_by_path_mut(path)
-            .ok_or_else(|| format!("Invalid path: {:?}", path))?;
+            .ok_or_else(|| MessageError::InvalidPath(path.to_vec()))?;
 
         // 创建新消息并设置路径
         // Create new message and set path
-        let mut new_message = Messages::new(role, content);
         let mut new_path = path.to_vec();
         new_path.push(parent.child.len());
-        new_message.path = new_path;
+        let new_message = Self::new_with_path(new_path.clone(), role, content);
 
         // 添加到父节点的子列表
         // Add to parent's child list
-        parent.child.push(new_message.clone());
+        parent.child.push(new_message);
 
         Ok(())
     }
@@ -265,10 +335,10 @@ impl Messages {
     /// * `content` - 新的消息内容 / New message content
     ///
     /// # 返回 / Returns
-    /// * `Result<(), String>` - 成功返回Ok，失败返回错误信息 / Returns Ok on success, error message on failure
-    pub fn update_content(&mut self, path: &[usize], content: String) -> Result<(), String> {
+    /// * `Result<(), MessageError>` - 成功返回Ok，失败返回错误 / Returns Ok on success, error on failure
+    pub fn update_content(&mut self, path: &[usize], content: String) -> Result<(), MessageError> {
         let node = self.get_node_by_path_mut(path)
-            .ok_or_else(|| format!("Invalid path: {:?}", path))?;
+            .ok_or_else(|| MessageError::InvalidPath(path.to_vec()))?;
 
         node.content = content;
 
@@ -283,20 +353,20 @@ impl Messages {
     /// * `path` - 节点路径 / Node path
     ///
     /// # 返回 / Returns
-    /// * `Result<(), String>` - 成功返回Ok，失败返回错误信息 / Returns Ok on success, error message on failure
-    pub fn delete(&mut self, path: &[usize]) -> Result<(), String> {
+    /// * `Result<(), MessageError>` - 成功返回Ok，失败返回错误 / Returns Ok on success, error on failure
+    pub fn delete(&mut self, path: &[usize]) -> Result<(), MessageError> {
         if path.is_empty() {
-            return Err("Cannot delete root node".to_string());
+            return Err(MessageError::UnsupportedOperation("Cannot delete root node".to_string()));
         }
 
         let parent_path = &path[0..path.len()-1];
         let index = path[path.len() - 1];
 
         let parent = self.get_node_by_path_mut(parent_path)
-            .ok_or_else(|| format!("Invalid parent path: {:?}", parent_path))?;
+            .ok_or_else(|| MessageError::InvalidPath(parent_path.to_vec()))?;
 
         if index >= parent.child.len() {
-            return Err(format!("Invalid index: {}", index));
+            return Err(MessageError::InvalidIndex(index, parent_path.to_vec()));
         }
 
         // 删除节点
@@ -333,6 +403,10 @@ impl Messages {
         }
     }
 
+    //
+    // API 格式转换方法 / API format conversion methods
+    //
+
     /// 将消息转换为 API 格式
     ///
     /// Convert message to API format
@@ -342,7 +416,9 @@ impl Messages {
     ///
     /// # 返回 / Returns
     /// * `HashMap<String, String>` - API 格式的消息 / Message in API format
-    pub fn to_api_format_single(&self, current_speaker: &Role) -> HashMap<String, String> {
+    pub fn to_api_format(&self, current_speaker: &Role) -> HashMap<String, String> {
+        // 根据角色和当前发言者确定 API 格式
+        // Determine API format based on role and current speaker
         let (role_str, content) = match &self.role {
             Role::System => ("system", self.content.clone()),
             Role::User => ("user", self.content.clone()),
@@ -363,10 +439,31 @@ impl Messages {
             }
         };
 
+        // 创建并返回 API 格式的消息
+        // Create and return message in API format
         HashMap::from([
             ("role".to_string(), role_str.to_string()),
             ("content".to_string(), content),
         ])
+    }
+
+    /// 寻找两个路径的最近共同祖先路径
+    ///
+    /// Find the nearest common ancestor path of two paths
+    ///
+    /// # 参数 / Parameters
+    /// * `path1` - 第一个路径 / First path
+    /// * `path2` - 第二个路径 / Second path
+    ///
+    /// # 返回 / Returns
+    /// * `Vec<usize>` - 共同祖先路径 / Common ancestor path
+    fn find_common_ancestor(path1: &[usize], path2: &[usize]) -> Vec<usize> {
+        let common_prefix_len = path1.iter()
+            .zip(path2.iter())
+            .take_while(|&(&a, &b)| a == b)
+            .count();
+
+        path1[0..common_prefix_len].to_vec()
     }
 
     /// 获取指定路径之间的对话历史（用于API调用）
@@ -386,48 +483,50 @@ impl Messages {
         end_path: &[usize],
         current_speaker: &Role
     ) -> Vec<HashMap<String, String>> {
-        let mut history = Vec::new();
-
         // 找到最近的共同祖节点
         // Find the nearest common ancestor
-        let common_prefix_len = start_path.iter()
-            .zip(end_path.iter())
-            .take_while(|&(&a, &b)| a == b)
-            .count();
-
-        let common_ancestor_path = &start_path[0..common_prefix_len];
+        let common_ancestor_path = Self::find_common_ancestor(start_path, end_path);
 
         // 构建从共同祖先到终端节点的路径
         // Build path from common ancestor to end node
         let mut nodes = Vec::new();
+        let mut visited_paths = std::collections::HashSet::new();
 
-        if let Some(ancestor) = self.get_node_by_path(common_ancestor_path) {
+        if let Some(ancestor) = self.get_node_by_path(&common_ancestor_path) {
             // 添加从祖先到起始节点的路径（若需要）
             // Add path from ancestor to start node (if needed)
-            if common_prefix_len < start_path.len() {
-                let mut current_path = common_ancestor_path.to_vec();
-                for &idx in &start_path[common_prefix_len..] {
-                    current_path.push(idx);
-                    if let Some(node) = self.get_node_by_path(&current_path) {
+            if common_ancestor_path.len() < start_path.len() {
+                let relative_start_path = &start_path[common_ancestor_path.len()..];
+                let start_nodes = ancestor.get_children_from_self(relative_start_path);
+
+                for node in start_nodes {
+                    let path_key = format!("{:?}", node.path);
+                    if !visited_paths.contains(&path_key) {
+                        visited_paths.insert(path_key);
                         nodes.push(node);
                     }
                 }
             } else {
                 // 起始节点就是共同祖先
                 // Start node is the common ancestor
-                nodes.push(ancestor);
+                let path_key = format!("{:?}", ancestor.path);
+                if !visited_paths.contains(&path_key) {
+                    visited_paths.insert(path_key);
+                    nodes.push(ancestor.clone());
+                }
             }
 
             // 添加从祖先到终端节点的路径
             // Add path from ancestor to end node
-            if common_prefix_len < end_path.len() {
-                let mut current_path = common_ancestor_path.to_vec();
-                for &idx in &end_path[common_prefix_len..] {
-                    current_path.push(idx);
-                    if let Some(node) = self.get_node_by_path(&current_path) {
-                        if !nodes.contains(&node) {
-                            nodes.push(node);
-                        }
+            if common_ancestor_path.len() < end_path.len() {
+                let relative_end_path = &end_path[common_ancestor_path.len()..];
+                let end_nodes = ancestor.get_children_from_self(relative_end_path);
+
+                for node in end_nodes {
+                    let path_key = format!("{:?}", node.path);
+                    if !visited_paths.contains(&path_key) {
+                        visited_paths.insert(path_key);
+                        nodes.push(node);
                     }
                 }
             }
@@ -435,10 +534,6 @@ impl Messages {
 
         // 转换为API格式
         // Convert to API format
-        for node in nodes {
-            history.push(node.to_api_format_single(current_speaker));
-        }
-
-        history
+        nodes.iter().map(|node| node.to_api_format(current_speaker)).collect()
     }
 }

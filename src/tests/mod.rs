@@ -1,9 +1,11 @@
 use tracing::log::info;
-use crate::tests::chat::test_chat;
 use crate::tests::prompt::test_prompt;
+use crate::tests::chat::test_chat;
 
-mod chat;
 mod prompt;
+mod message;
+mod chat;
+
 
 #[tokio::test]
 pub async fn test() {
