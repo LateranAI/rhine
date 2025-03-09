@@ -35,36 +35,36 @@ pub async fn test_chat() {
 async fn test_single_chat() {
     let mut chat = SingleChat::new_with_api_name("pumpkin-gpt-4o", "", true);
 
-    let resp_1 = chat.get_resp("深度思考strawberry有几个r").await.unwrap();
+    let resp_1 = chat.get_req_body("深度思考strawberry有几个r").await.unwrap();
     let message_1 = chat.base.session.clone();
-    let answer_1 = chat.get_content_from_resp(resp_1).await.unwrap();
+    let answer_1 = chat.get_content_from_req_body(resp_1).await.unwrap();
     format_test_block("chat_single_round", || {
         format!("message: {:?}\nanswer: {}", message_1, answer_1)
     });
 
-    let resp_2 = chat.get_resp("你确定吗?").await.unwrap();
+    let resp_2 = chat.get_req_body("你确定吗?").await.unwrap();
     let message_2 = chat.base.session.clone();
-    let answer_2 = chat.get_content_from_resp(resp_2).await.unwrap();
+    let answer_2 = chat.get_content_from_req_body(resp_2).await.unwrap();
     format_test_block("chat_single_round", || {
         format!("message: {:?}\nanswer: {}", message_2, answer_2)
     });
 
-    let resp_3 = chat.get_resp_again([0].as_ref()).await.unwrap();
+    let resp_3 = chat.get_req_body_again([0].as_ref()).await.unwrap();
     let message_3 = chat.base.session.clone();
-    let answer_3 = chat.get_content_from_resp(resp_3).await.unwrap();
+    let answer_3 = chat.get_content_from_req_body(resp_3).await.unwrap();
     format_test_block("chat_single_round", || {
         format!("message: {:?}\nanswer: {}", message_3, answer_3)
     });
 
     let resp_4 = chat
-        .get_resp_with_new_question(
+        .get_req_body_with_new_question(
             [].as_ref(),
             "straw中有一个r, berry中有两个r, 深度思考strawberry有几个r?",
         )
         .await
         .unwrap();
     let message_4 = chat.base.session.clone();
-    let answer_4 = chat.get_content_from_resp(resp_4).await.unwrap();
+    let answer_4 = chat.get_content_from_req_body(resp_4).await.unwrap();
     format_test_block("chat_single_round", || {
         format!("message: {:?}\nanswer: {}", message_4, answer_4)
     });

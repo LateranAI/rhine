@@ -89,7 +89,7 @@ impl MultiChat {
         self.base.add_message_with_parent_path(path, role, content)
     }
 
-    pub async fn get_resp_with_new_question(
+    pub async fn get_req_body_with_new_question(
         &mut self,
         parent_path: &[usize],
         user_input: &str,
@@ -108,7 +108,7 @@ impl MultiChat {
             .build_request_body(&self.base.session.default_path.clone(), &character_role)?)
     }
 
-    pub async fn get_resp_again(
+    pub async fn get_req_body_again(
         &mut self,
         end_path: &[usize],
     ) -> Result<serde_json::Value, ChatError> {
@@ -121,13 +121,13 @@ impl MultiChat {
         Ok(self.base.build_request_body(end_path, &character_role)?)
     }
 
-    pub async fn get_resp(&mut self, user_input: &str) -> Result<serde_json::Value, ChatError> {
+    pub async fn get_req_body(&mut self, user_input: &str) -> Result<serde_json::Value, ChatError> {
         info!("path: {:?}", self.base.session.default_path.clone());
-        self.get_resp_with_new_question(&self.base.session.default_path.clone(), user_input)
+        self.get_req_body_with_new_question(&self.base.session.default_path.clone(), user_input)
             .await
     }
 
-    async fn get_content_from_resp(
+    async fn get_content_from_req_body(
         &mut self,
         request_body: serde_json::Value,
     ) -> Result<String, ChatError> {
@@ -168,9 +168,9 @@ impl MultiChat {
             return Err(Report::new(ChatError::NoCharacterSelected));
         }
 
-        let request_body = self.get_resp(user_input).await?;
+        let request_body = self.get_req_body(user_input).await?;
 
-        self.get_content_from_resp(request_body).await
+        self.get_content_from_req_body(request_body).await
     }
 
     pub async fn get_json_answer<T: DeserializeOwned + 'static + JsonSchema>(
